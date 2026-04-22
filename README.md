@@ -4,6 +4,10 @@ Metriq Visualizer is an open-source multidimensional data and media visualizer.
 
 It turns local audio, video, CSV, TSV, and XLSX data into interactive 3D geometry that you can scrub, inspect, and export as an MP4.
 
+## About Metriq
+
+Metriq builds technology intended to support real-world progress. The visual language behind this project reflects that broader design philosophy: clean, technical, and forward-looking.
+
 ## Features
 - Local audio and video analysis
 - Local CSV, TSV, and XLSX import for numeric datasets
