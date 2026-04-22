@@ -18,7 +18,7 @@ Metriq builds technology intended to support real-world progress. The visual lan
 - Optional smooth spline path rendering for line and tube modes
 - Save and reopen visualizer projects as `.mvproj`
 - Save and reuse visualizer presets as `.mvpreset`
-- Visualizer Behavior preset files are loaded from the local `presets/` folder
+- Visualizer behavior presets are loaded from the local `presets/` directory next to the app. Add your own `.mvpreset` files there to populateg the list.
 - Legacy `.bgl` project files can still be opened
 - Feature reference panel and mapped trace panels
 - Professional dark-mode interface
@@ -73,6 +73,3 @@ See `TRADEMARKS.md` and `assets/ASSET_NOTICE.md` for the brand-asset reservation
 
 ## Copyright
 Copyright (c) 2026 Metriq Foundation, Inc.
-
-
-Visualizer behavior presets are loaded from the local `presets/` directory next to the app. Add your own `.mvpreset` files there to populate the list.
