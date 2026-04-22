@@ -1,111 +1,72 @@
-# Metriq Visualizer
+# Metriq Visualizer v1.10.16
 
-**Turn sound and data into geometry.**
+Metriq Visualizer is an open-source multidimensional data and media visualizer.
 
-Metriq Visualizer is a real-time multidimensional visualizer for audio and tabular datasets. It transforms recordings and structured data into interactive 3D forms that make patterns, movement, and relationships easier to explore, present, and understand.
+It turns local audio, video, CSV, TSV, and XLSX data into interactive 3D geometry that you can scrub, inspect, and export as an MP4.
 
-Built for researchers, educators, creatives, and technical teams who want something more expressive than a flat chart or spectrogram.
+## Features
+- Local audio and video analysis
+- Local CSV, TSV, and XLSX import for numeric datasets
+- Formula-based mapping for X, Y, Z, color, and size
+- Interactive geometry playback and timeline scrubbing
+- Optional smooth spline path rendering for line and tube modes
+- Save and reopen visualizer projects as `.mvproj`
+- Save and reuse visualizer presets as `.mvpreset`
+- Visualizer Behavior preset files are loaded from the local `presets/` folder
+- Legacy `.bgl` project files can still be opened
+- Feature reference panel and mapped trace panels
+- Professional dark-mode interface
+- MP4 export presets in:
+  - 1280×720 landscape
+  - 1920×1080 landscape
+  - 1080×1920 vertical
 
----
+## Input notes
+Open a media file to extract a feature set and build geometry.
 
-![Metriq Visualizer Banner](assets/repo_banner.png)
+Open a table file with at least one numeric column to map imported values into geometry. Imported columns are available as formula-ready features, and the table importer also derives helper features such as `pc1`, `pc2`, `pc3`, `magnitude`, `column_mean`, and `delta_magnitude`.
 
-## What it does
+## Formula examples
+For media:
+- `pc1`
+- `0.7*mfcc_1 + 0.3*chroma_mean`
+- `smooth(spectral_flux, 5)`
 
-Metriq Visualizer helps you see structure inside complex data.
+For tabular data:
+- `input_1`
+- `mean(input_1, input_2)`
+- `pc1`
+- `delta_magnitude`
 
-With it, you can:
+Supported functions: `abs`, `sqrt`, `log`, `log1p`, `exp`, `clip`, `smooth`, `mean`, `avg`, `sum`, `max`, `min`
 
-- visualize bird songs, music, and environmental audio
-- import CSV, TSV, and XLSX datasets
-- map dimensions like pitch, timbre, motion, amplitude, time, and more into 3D space
-- explore recordings as points, trails, tubes, and smooth curves
-- save and reload projects and presets
-- export shareable MP4 visualizations in landscape and vertical formats
-
-Instead of staring at a static graph, you can inspect how patterns evolve through space and time.
-
----
-
-## Why it exists
-
-A lot of important signal and multidimensional data is hard to read in conventional plots.
-
-Metriq Visualizer is designed to make those patterns feel tangible.
-
-It is not just about making data look cool. It is about giving sound and structure a form you can navigate, compare, and understand more intuitively.
-
----
-
-## Highlights
-
-- **Interactive 3D visualization**
-- **Audio + spreadsheet import**
-- **Custom dimension mapping**
-- **Smooth spline path rendering**
-- **Tube and line path styles**
-- **Dark, technical UI**
-- **`.mvproj` project files**
-- **`.mvpreset` preset files**
-- **720p, 1080p, and vertical MP4 export**
-
----
-
-## Supported inputs
-
-### Audio
-- WAV
-- MP3
-- FLAC
-- OGG
-- other common formats supported by your local media stack
-
-### Tabular data
-- CSV
-- TSV
-- XLSX
-
----
-
-## File formats
-
-Metriq Visualizer uses custom file extensions for saved state:
-
-- **`.mvproj`** — project files
-- **`.mvpreset`** — visualizer preset files
-
-These are human-readable JSON-based formats designed for portability and versioning.
-
----
-
-## Use cases
-
-Metriq Visualizer can be used for things like:
-
-- bird song and bioacoustics exploration
-- music and sound visualization
-- signal interpretation
-- multidimensional dataset presentation
-- research and education
-- creative experimentation
-- internal demos and technical storytelling
-
----
-
-## Screenshots
-
-> Replace these with real screenshots from your app.
-
-| Main View | Audio Geometry | Data Import |
-|---|---|---|
-| ![](assets/screenshot_main.png) | ![](assets/screenshot_audio.png) | ![](assets/screenshot_data.png) |
-
----
-
-## Installation
-
-### 1. Clone the repository
-
+## Install (Linux)
 ```bash
-git clone https://github.com/YOUR_ORG/metriq-visualizer.git
-cd metriq-visualizer
+sudo apt update
+sudo apt install ffmpeg python3-pip libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 libpulse0
+
+cd metriq_visualizer_v1_10_16
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python metriq_visualizer_app.py
+```
+
+Or:
+```bash
+./run_linux.sh
+```
+
+## License
+The source code in this package is licensed under Apache-2.0. See `LICENSE`.
+
+## Branding and intellectual property notice
+Use of this software, any fork, any modified version, or any derivative work does **not** grant permission to use the Metriq name, trademarks, service marks, logos, symbols, trade dress, copyrighted brand materials, or any other Metriq Foundation, Inc. intellectual property, and does not imply affiliation, sponsorship, or endorsement by Metriq Foundation, Inc.
+
+See `TRADEMARKS.md` and `assets/ASSET_NOTICE.md` for the brand-asset reservation notice.
+
+## Copyright
+Copyright (c) 2026 Metriq Foundation, Inc.
+
+
+Visualizer behavior presets are loaded from the local `presets/` directory next to the app. Add your own `.mvpreset` files there to populate the list.
