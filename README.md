@@ -1,3 +1,5 @@
+![Metriq Visualizer Banner](assets/metriq_logo_color.png)
+
 # Metriq Visualizer v1.10.16
 
 Metriq Visualizer is an open-source multidimensional data and media visualizer.
