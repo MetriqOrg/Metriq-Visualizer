@@ -64,7 +64,7 @@ Or:
 ```
 
 ## License
-The source code in this package is licensed under Apache-2.0. See `LICENSE`.
+The source code in this package is licensed under MPL 2.0. See `LICENSE`.
 
 ## Branding and intellectual property notice
 Use of this software, any fork, any modified version, or any derivative work does **not** grant permission to use the Metriq name, trademarks, service marks, logos, symbols, trade dress, copyrighted brand materials, or any other Metriq Foundation, Inc. intellectual property, and does not imply affiliation, sponsorship, or endorsement by Metriq Foundation, Inc.
