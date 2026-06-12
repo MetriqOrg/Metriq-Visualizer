@@ -1,6 +1,6 @@
 ![Metriq Visualizer Banner](assets/metriq_logo_color.png)
 
-# Metriq Visualizer v1.10.17
+# Metriq Visualizer v1.10.18
 
 Metriq Visualizer is an open-source multidimensional data and media visualizer.
 
@@ -20,7 +20,7 @@ Metriq builds technology intended to support real-world progress. The visual lan
 - Optional smooth spline path rendering for line and tube modes
 - Save and reopen visualizer projects as `.mvproj`
 - Save and reuse visualizer presets as `.mvpreset`
-- Visualizer behavior presets are loaded from the local `presets/` directory next to the app. Add your own `.mvpreset` files there to populateg the list.
+- Visualizer behavior presets are loaded from the local `presets/` directory next to the app. Add your own `.mvpreset` files there to populate the list.
 - Legacy `.bgl` project files can still be opened
 - Feature reference panel and mapped trace panels
 - Professional dark-mode interface
@@ -49,22 +49,113 @@ For tabular data:
 
 Supported functions: `abs`, `sqrt`, `log`, `log1p`, `exp`, `clip`, `smooth`, `mean`, `avg`, `sum`, `max`, `min`
 
-## Install (Linux)
+## Install from source (Linux)
+
+Requirements:
+- Python 3.10+
+- FFmpeg
+
+Ubuntu / Debian:
+
 ```bash
 sudo apt update
-sudo apt install ffmpeg python3-pip libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 libpulse0
+sudo apt install ffmpeg python3 python3-pip python3-venv \
+    libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 libpulse0
+```
 
-cd metriq_visualizer_v1_10_17
+### Option 1 — Clone from GitHub
+
+```bash
+git clone https://github.com/MetriqOrg/Metriq-Visualizer.git
+cd Metriq-Visualizer
+
 python3 -m venv .venv
 source .venv/bin/activate
+
 pip install -r requirements.txt
+
 python metriq_visualizer_app.py
 ```
 
-Or:
+### Option 2 — Download ZIP from GitHub
+
+GitHub source ZIP files usually extract to a folder named `Metriq-Visualizer-main` or `Metriq-Visualizer-master`, depending on the default branch. Use the actual folder name that was extracted.
+
 ```bash
+# Example for GitHub's default main-branch ZIP name:
+cd Metriq-Visualizer-main
+
+python3 -m venv .venv
+source .venv/bin/activate
+
+pip install -r requirements.txt
+
+python metriq_visualizer_app.py
+```
+
+### Option 3 — Launcher script
+
+From inside the project folder:
+
+```bash
+chmod +x run_linux.sh
 ./run_linux.sh
 ```
+
+## Install from source (macOS)
+
+For additional macOS compatibility and packaging notes, see [`docs/MACOS.md`](docs/MACOS.md).
+
+Requirements:
+- Python 3.10+
+- Homebrew
+- FFmpeg
+
+Install dependencies:
+
+```bash
+brew install python ffmpeg
+```
+
+Clone the repository:
+
+```bash
+git clone https://github.com/MetriqOrg/Metriq-Visualizer.git
+cd Metriq-Visualizer
+```
+
+Create a virtual environment:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+Install Python dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Launch:
+
+```bash
+python metriq_visualizer_app.py
+```
+
+If macOS blocks the app or Python process because it was downloaded from the internet, open System Settings → Privacy & Security and allow it there. For source installs, this is usually less of an issue than with packaged `.app` builds.
+
+## Packaged builds
+
+For normal users, packaged releases are recommended over source installs. Keep compiled binaries out of the repository and attach them to GitHub Releases instead.
+
+Recommended release assets:
+- Windows ZIP or EXE
+- macOS Apple Silicon ZIP or DMG
+- macOS Intel ZIP or DMG
+- Linux AppImage or ZIP
+
+See `docs/RELEASE_BUILDS.md` for release-build notes.
 
 ## License
 The source code in this package is licensed under MPL 2.0. See `LICENSE`.
