@@ -1,0 +1,83 @@
+name: Build release artifacts
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-14, windows-2022]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Linux system packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 libpulse0
+
+      - name: Install macOS system packages
+        if: runner.os == 'macOS'
+        run: |
+          brew install ffmpeg || true
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+
+      - name: Build app
+        run: python build/build_pyinstaller.py
+
+      - name: Package Linux artifact
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          tar -C dist -czf Metriq-Visualizer-Linux-x86_64.tar.gz "Metriq Visualizer"
+
+      - name: Package macOS artifact
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent "dist/Metriq Visualizer.app" Metriq-Visualizer-macOS-arm64.zip
+
+      - name: Package Windows artifact
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist/Metriq Visualizer" -DestinationPath "Metriq-Visualizer-Windows-x86_64.zip"
+
+      - name: Upload Linux artifact
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Metriq-Visualizer-Linux-x86_64
+          path: Metriq-Visualizer-Linux-x86_64.tar.gz
+
+      - name: Upload macOS artifact
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Metriq-Visualizer-macOS-arm64
+          path: Metriq-Visualizer-macOS-arm64.zip
+
+      - name: Upload Windows artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Metriq-Visualizer-Windows-x86_64
+          path: Metriq-Visualizer-Windows-x86_64.zip
