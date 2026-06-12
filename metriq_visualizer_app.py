@@ -130,7 +130,7 @@ from metriq_visualizer_diagnostics import (
 )
 
 APP_NAME = "Metriq Visualizer"
-APP_VERSION = "1.10.17"
+APP_VERSION = "1.10.18"
 APP_TITLE = APP_NAME
 APP_WINDOW_TITLE = f"{APP_NAME} v{APP_VERSION}"
 FUN_EDITION = True
