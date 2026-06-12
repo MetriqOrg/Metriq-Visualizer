@@ -54,7 +54,9 @@ Supported functions: `abs`, `sqrt`, `log`, `log1p`, `exp`, `clip`, `smooth`, `me
 sudo apt update
 sudo apt install ffmpeg python3-pip libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 libpulse0
 
-cd metriq_visualizer_v1_10_17
+# Download and extract the ZIP from GitHub
+
+cd Metriq-Visualizer-main
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -63,6 +65,7 @@ python metriq_visualizer_app.py
 
 Or:
 ```bash
+chmod +x run_linux.sh
 ./run_linux.sh
 ```
 
