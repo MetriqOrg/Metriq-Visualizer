@@ -110,6 +110,7 @@ from metriq_visualizer_cinematics import (
     serialize_regions,
 )
 from metriq_visualizer_export_queue import ExportQueueJob, deserialize_queue, serialize_queue
+from metriq_visualizer_export_engine import EXPORT_ENGINE_AUTO_LABEL, EXPORT_ENGINE_CHOICES, EXPORT_QUALITY_BALANCED_LABEL, EXPORT_QUALITY_CHOICES
 from metriq_visualizer_visuals import (
     EMPTY_FLOAT,
     EMPTY_RGBA,
@@ -129,7 +130,7 @@ from metriq_visualizer_diagnostics import (
 )
 
 APP_NAME = "Metriq Visualizer"
-APP_VERSION = "1.10.16"
+APP_VERSION = "1.10.17"
 APP_TITLE = APP_NAME
 APP_WINDOW_TITLE = f"{APP_NAME} v{APP_VERSION}"
 FUN_EDITION = True
@@ -3587,6 +3588,16 @@ class MainWindow(QMainWindow):
         self.render_width_spin = self._make_spin(640, 7680, 1920, step=160)
         self.render_height_spin = self._make_spin(360, 4320, 1080, step=90)
         self.render_fps_spin = self._make_spin(12, 120, 30, step=1)
+        self.export_engine_combo = QComboBox()
+        self.export_engine_combo.addItems(list(EXPORT_ENGINE_CHOICES))
+        self.export_engine_combo.setCurrentText(EXPORT_ENGINE_AUTO_LABEL)
+        self.export_engine_combo.setToolTip(
+            "Auto uses FFmpeg hardware H.264 encoders when available, then CPU libx264, then the legacy OpenCV writer."
+        )
+        self.export_quality_combo = QComboBox()
+        self.export_quality_combo.addItems(list(EXPORT_QUALITY_CHOICES))
+        self.export_quality_combo.setCurrentText(EXPORT_QUALITY_BALANCED_LABEL)
+        self.export_quality_combo.setToolTip("Controls encoder speed/quality tradeoff. The visual frame renderer remains full quality.")
         self.limit_export_range_checkbox = QCheckBox("Limit export / CSV to time range")
         self.limit_export_range_checkbox.setChecked(False)
         self.export_start_spin = self._make_double_spin(0.0, 86400.0, 0.0, 0.05)
@@ -3610,6 +3621,8 @@ class MainWindow(QMainWindow):
             self.render_width_spin,
             self.render_height_spin,
             self.render_fps_spin,
+            self.export_engine_combo,
+            self.export_quality_combo,
             self.limit_export_range_checkbox,
             self.export_start_spin,
             self.export_end_spin,
@@ -3631,6 +3644,8 @@ class MainWindow(QMainWindow):
         form.addRow("Width", self.render_width_spin)
         form.addRow("Height", self.render_height_spin)
         form.addRow("FPS", self.render_fps_spin)
+        form.addRow("Engine", self.export_engine_combo)
+        form.addRow("Encoder quality", self.export_quality_combo)
         form.addRow(self.limit_export_range_checkbox)
         form.addRow("Start (s)", self.export_start_spin)
         form.addRow("End (s)", self.export_end_spin)
@@ -3871,6 +3886,8 @@ class MainWindow(QMainWindow):
             width=int(export.get('width', self.render_width_spin.value())),
             height=int(export.get('height', self.render_height_spin.value())),
             fps=int(export.get('fps', self.render_fps_spin.value())),
+            export_engine=str(export.get('engine', EXPORT_ENGINE_AUTO_LABEL)),
+            export_quality=str(export.get('quality', EXPORT_QUALITY_BALANCED_LABEL)),
             layout=layout,
             base_alpha=float(visual.get('alpha', self.alpha_spin.value())),
             history_mode=str(visual.get('history_mode', self.history_combo.currentText())),
@@ -4896,6 +4913,8 @@ class MainWindow(QMainWindow):
                 "width": int(self.render_width_spin.value()),
                 "height": int(self.render_height_spin.value()),
                 "fps": int(self.render_fps_spin.value()),
+                "engine": self.export_engine_combo.currentText() if hasattr(self, "export_engine_combo") else EXPORT_ENGINE_AUTO_LABEL,
+                "quality": self.export_quality_combo.currentText() if hasattr(self, "export_quality_combo") else EXPORT_QUALITY_BALANCED_LABEL,
                 "layout": self.export_layout_spec.clone().clamp().to_dict(),
                 "limit_range": bool(self.limit_export_range_checkbox.isChecked()),
                 "start_time": float(self.export_start_spin.value()),
@@ -5072,6 +5091,12 @@ class MainWindow(QMainWindow):
             self.render_width_spin.setValue(int(export.get("width", self.render_width_spin.value())))
             self.render_height_spin.setValue(int(export.get("height", self.render_height_spin.value())))
             self.render_fps_spin.setValue(int(export.get("fps", self.render_fps_spin.value())))
+            export_engine = str(export.get("engine", self.export_engine_combo.currentText() if hasattr(self, "export_engine_combo") else EXPORT_ENGINE_AUTO_LABEL))
+            if hasattr(self, "export_engine_combo") and self.export_engine_combo.findText(export_engine) >= 0:
+                self.export_engine_combo.setCurrentText(export_engine)
+            export_quality = str(export.get("quality", self.export_quality_combo.currentText() if hasattr(self, "export_quality_combo") else EXPORT_QUALITY_BALANCED_LABEL))
+            if hasattr(self, "export_quality_combo") and self.export_quality_combo.findText(export_quality) >= 0:
+                self.export_quality_combo.setCurrentText(export_quality)
             self.limit_export_range_checkbox.setChecked(bool(export.get("limit_range", self.limit_export_range_checkbox.isChecked())))
             self.export_start_spin.setValue(float(export.get("start_time", self.export_start_spin.value())))
             self.export_end_spin.setValue(float(export.get("end_time", self.export_end_spin.value())))
@@ -6046,6 +6071,8 @@ class MainWindow(QMainWindow):
             width=int(width if width is not None else self.render_width_spin.value()),
             height=int(height if height is not None else self.render_height_spin.value()),
             fps=int(fps if fps is not None else self.render_fps_spin.value()),
+            export_engine=self.export_engine_combo.currentText() if hasattr(self, "export_engine_combo") else EXPORT_ENGINE_AUTO_LABEL,
+            export_quality=self.export_quality_combo.currentText() if hasattr(self, "export_quality_combo") else EXPORT_QUALITY_BALANCED_LABEL,
             layout=(layout_spec or self.export_layout_spec).clone().clamp(),
             base_alpha=float(self.alpha_spin.value()),
             history_mode=self.history_combo.currentText(),
