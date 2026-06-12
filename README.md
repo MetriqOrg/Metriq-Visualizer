@@ -1,6 +1,6 @@
 ![Metriq Visualizer Banner](assets/metriq_logo_color.png)
 
-# Metriq Visualizer v1.10.16
+# Metriq Visualizer v1.10.17
 
 Metriq Visualizer is an open-source multidimensional data and media visualizer.
 
@@ -28,6 +28,7 @@ Metriq builds technology intended to support real-world progress. The visual lan
   - 1280×720 landscape
   - 1920×1080 landscape
   - 1080×1920 vertical
+- Export engine selector with Auto GPU encoder → CPU fallback, CPU FFmpeg, and legacy OpenCV modes
 
 ## Input notes
 Open a media file to extract a feature set and build geometry.
@@ -53,7 +54,7 @@ Supported functions: `abs`, `sqrt`, `log`, `log1p`, `exp`, `clip`, `smooth`, `me
 sudo apt update
 sudo apt install ffmpeg python3-pip libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 libpulse0
 
-cd metriq_visualizer_v1_10_16
+cd metriq_visualizer_v1_10_17
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
