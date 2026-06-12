@@ -8,7 +8,7 @@ import math
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable
 
@@ -36,6 +36,18 @@ from metriq_visualizer_visuals import (
     compute_tube_radii,
     prepare_color_mapping,
     zoom_limits,
+)
+
+from metriq_visualizer_export_engine import (
+    EXPORT_ENGINE_AUTO_LABEL,
+    EXPORT_QUALITY_BALANCED_LABEL,
+    build_ffmpeg_rawvideo_command,
+    encoder_candidates_for_engine,
+    find_ffmpeg,
+    normalize_export_engine,
+    normalize_export_quality,
+    probe_encoder,
+    sanitize_video_size,
 )
 
 
@@ -92,6 +104,9 @@ class ExportOptions:
     show_watermark: bool = False
     watermark_text: str = ""
     title: str = "Metriq Visualizer"
+    export_engine: str = EXPORT_ENGINE_AUTO_LABEL
+    export_quality: str = EXPORT_QUALITY_BALANCED_LABEL
+    video_bitrate_mbps: float = 0.0
     start_time: float = 0.0
     end_time: float | None = None
 
@@ -1027,49 +1042,147 @@ def _mux_audio_if_possible(
 
 
 
-def render_export_video(
+
+def _render_export_video_ffmpeg(
     analysis: AnalysisResult,
     geom: GeometryResult,
     options: ExportOptions,
+    *,
+    ffmpeg_path: str,
+    encoder,
+    quality: str,
+    clip_start: float,
+    clip_end: float,
+    clip_duration: float,
+    total_frames: int,
     progress_callback: Callable[[float, str], None] | None = None,
 ) -> str:
     output_path = str(options.output_path)
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-
-    full_duration = float(analysis.times[-1]) if analysis.times.size > 0 else 0.0
-    clip_start = max(0.0, min(float(getattr(options, "start_time", 0.0) or 0.0), full_duration))
-    opt_end = getattr(options, "end_time", None)
-    if opt_end is None or float(opt_end) <= clip_start:
-        clip_end = full_duration
-    else:
-        clip_end = max(clip_start, min(float(opt_end), full_duration))
-    clip_duration = max(0.0, clip_end - clip_start)
-
-    fps = max(1, int(options.fps))
-    total_frames = max(1, int(math.ceil(clip_duration * fps)) + 1)
-
+    temp_root = Path(tempfile.mkdtemp(prefix="metriq_visualizer_render_ffmpeg_"))
+    encoded_video = str(temp_root / "encoded_render.mp4")
     session = ExportPreviewSession(analysis, geom, options)
-    temp_root = Path(tempfile.mkdtemp(prefix="metriq_visualizer_render_"))
+    stderr_text = b""
+    proc: subprocess.Popen | None = None
+    try:
+        cmd = build_ffmpeg_rawvideo_command(
+            ffmpeg_path=ffmpeg_path,
+            encoder=encoder,
+            output_path=encoded_video,
+            width=int(options.width),
+            height=int(options.height),
+            fps=max(1, int(options.fps)),
+            quality=quality,
+            bitrate_mbps=float(getattr(options, "video_bitrate_mbps", 0.0) or 0.0),
+            audio_path=analysis.audio_path if Path(analysis.audio_path).exists() else None,
+            audio_start_time=clip_start,
+            audio_duration=clip_duration if clip_duration > 1e-6 else None,
+        )
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        if progress_callback is not None:
+            progress_callback(0.0, f"Encoding with {encoder.label} (FFmpeg)…")
+        for frame_idx in range(total_frames):
+            current_time = min(clip_end, clip_start + frame_idx / float(max(1, int(options.fps))))
+            frame_rgba = session.render_frame(current_time=current_time)
+            frame_rgb = np.ascontiguousarray(frame_rgba[:, :, :3], dtype=np.uint8)
+            if proc.stdin is None:
+                raise RuntimeError("FFmpeg stdin pipe was not available.")
+            try:
+                proc.stdin.write(frame_rgb.tobytes())
+            except BrokenPipeError as exc:
+                try:
+                    stderr_text = proc.stderr.read() if proc.stderr is not None else b""
+                except Exception:
+                    stderr_text = b""
+                raise RuntimeError(_format_ffmpeg_failure(encoder.label, proc.returncode, stderr_text)) from exc
+
+            if progress_callback is not None and (frame_idx == 0 or frame_idx == total_frames - 1 or frame_idx % max(1, int(options.fps) // 2) == 0):
+                progress = frame_idx / max(1, total_frames - 1)
+                progress_callback(progress, f"Rendering frame {frame_idx + 1} / {total_frames} → {encoder.label}")
+
+        if proc.stdin is not None:
+            proc.stdin.close()
+        return_code = proc.wait()
+        try:
+            stderr_text = proc.stderr.read() if proc.stderr is not None else b""
+        except Exception:
+            stderr_text = b""
+        if return_code != 0:
+            raise RuntimeError(_format_ffmpeg_failure(encoder.label, return_code, stderr_text))
+        if not Path(encoded_video).exists() or Path(encoded_video).stat().st_size <= 0:
+            raise RuntimeError(f"FFmpeg did not create an output file with {encoder.label}.")
+
+        if Path(output_path).exists():
+            try:
+                Path(output_path).unlink()
+            except Exception:
+                pass
+        Path(encoded_video).replace(output_path)
+        if progress_callback is not None:
+            if clip_duration > 1e-6:
+                progress_callback(1.0, f"Export finished with {encoder.label} ({clip_start:0.02f}s → {clip_end:0.02f}s): {output_path}")
+            else:
+                progress_callback(1.0, f"Export finished with {encoder.label}: {output_path}")
+        return output_path
+    finally:
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        session.close()
+        shutil.rmtree(temp_root, ignore_errors=True)
+
+
+def _format_ffmpeg_failure(encoder_label: str, return_code: int | None, stderr_text: bytes | str) -> str:
+    if isinstance(stderr_text, bytes):
+        text = stderr_text.decode("utf-8", errors="replace")
+    else:
+        text = str(stderr_text or "")
+    text = text.strip()
+    if len(text) > 1800:
+        text = text[-1800:]
+    if text:
+        return f"FFmpeg export failed with {encoder_label} (exit {return_code}):\n{text}"
+    return f"FFmpeg export failed with {encoder_label} (exit {return_code})."
+
+
+def _render_export_video_legacy_opencv(
+    analysis: AnalysisResult,
+    geom: GeometryResult,
+    options: ExportOptions,
+    *,
+    clip_start: float,
+    clip_end: float,
+    clip_duration: float,
+    total_frames: int,
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> str:
+    output_path = str(options.output_path)
+    session = ExportPreviewSession(analysis, geom, options)
+    temp_root = Path(tempfile.mkdtemp(prefix="metriq_visualizer_render_opencv_"))
     silent_video = str(temp_root / "silent_render.mp4")
 
     writer = cv2.VideoWriter(
         silent_video,
         cv2.VideoWriter_fourcc(*"mp4v"),
-        float(fps),
+        float(max(1, int(options.fps))),
         (int(options.width), int(options.height)),
     )
     if not writer.isOpened():
         session.close()
+        shutil.rmtree(temp_root, ignore_errors=True)
         raise RuntimeError("Could not open the MP4 writer for export.")
 
     try:
+        if progress_callback is not None:
+            progress_callback(0.0, "Encoding with legacy OpenCV MP4 writer…")
         for frame_idx in range(total_frames):
-            current_time = min(clip_end, clip_start + frame_idx / float(fps))
+            current_time = min(clip_end, clip_start + frame_idx / float(max(1, int(options.fps))))
             frame_rgba = session.render_frame(current_time=current_time)
             frame_rgb = np.asarray(frame_rgba[:, :, :3], dtype=np.uint8)
             writer.write(cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR))
 
-            if progress_callback is not None and (frame_idx == 0 or frame_idx == total_frames - 1 or frame_idx % max(1, fps // 2) == 0):
+            if progress_callback is not None and (frame_idx == 0 or frame_idx == total_frames - 1 or frame_idx % max(1, int(options.fps) // 2) == 0):
                 progress = frame_idx / max(1, total_frames - 1)
                 progress_callback(progress, f"Rendering frame {frame_idx + 1} / {total_frames}")
     finally:
@@ -1095,10 +1208,84 @@ def render_export_video(
     if not muxed:
         Path(silent_video).replace(output_path)
 
+    shutil.rmtree(temp_root, ignore_errors=True)
     if progress_callback is not None:
         if clip_duration > 1e-6:
-            progress_callback(1.0, f"Export finished ({clip_start:0.02f}s → {clip_end:0.02f}s): {output_path}")
+            progress_callback(1.0, f"Export finished (legacy, {clip_start:0.02f}s → {clip_end:0.02f}s): {output_path}")
         else:
-            progress_callback(1.0, f"Export finished: {output_path}")
-
+            progress_callback(1.0, f"Export finished (legacy): {output_path}")
     return output_path
+
+
+def render_export_video(
+    analysis: AnalysisResult,
+    geom: GeometryResult,
+    options: ExportOptions,
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> str:
+    output_path = str(options.output_path)
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+
+    width, height = sanitize_video_size(int(options.width), int(options.height))
+    render_options = options if (width == int(options.width) and height == int(options.height)) else replace(options, width=width, height=height)
+
+    full_duration = float(analysis.times[-1]) if analysis.times.size > 0 else 0.0
+    clip_start = max(0.0, min(float(getattr(render_options, "start_time", 0.0) or 0.0), full_duration))
+    opt_end = getattr(render_options, "end_time", None)
+    if opt_end is None or float(opt_end) <= clip_start:
+        clip_end = full_duration
+    else:
+        clip_end = max(clip_start, min(float(opt_end), full_duration))
+    clip_duration = max(0.0, clip_end - clip_start)
+
+    fps = max(1, int(render_options.fps))
+    total_frames = max(1, int(math.ceil(clip_duration * fps)) + 1)
+
+    engine = normalize_export_engine(getattr(render_options, "export_engine", EXPORT_ENGINE_AUTO_LABEL))
+    quality = normalize_export_quality(getattr(render_options, "export_quality", EXPORT_QUALITY_BALANCED_LABEL))
+    errors: list[str] = []
+    ffmpeg_path = find_ffmpeg()
+
+    if engine != "legacy" and ffmpeg_path:
+        candidates = encoder_candidates_for_engine(engine, ffmpeg_path)
+        for candidate in candidates:
+            if not probe_encoder(ffmpeg_path, candidate.name, quality):
+                errors.append(f"{candidate.label} was listed by FFmpeg but failed its encoder probe.")
+                continue
+            try:
+                return _render_export_video_ffmpeg(
+                    analysis,
+                    geom,
+                    render_options,
+                    ffmpeg_path=ffmpeg_path,
+                    encoder=candidate,
+                    quality=quality,
+                    clip_start=clip_start,
+                    clip_end=clip_end,
+                    clip_duration=clip_duration,
+                    total_frames=total_frames,
+                    progress_callback=progress_callback,
+                )
+            except Exception as exc:
+                errors.append(str(exc))
+                if engine in {"gpu", "cpu"}:
+                    continue
+        if engine == "gpu":
+            detail = "\n".join(errors[-4:]) if errors else "No supported hardware H.264 encoder was found."
+            raise RuntimeError(f"GPU export was requested, but no hardware encoder completed successfully.\n{detail}")
+    elif engine != "legacy" and not ffmpeg_path:
+        errors.append("FFmpeg was not found on PATH.")
+
+    if progress_callback is not None and engine == "auto" and errors:
+        progress_callback(0.0, "GPU/FFmpeg export unavailable; falling back to the legacy OpenCV writer.")
+
+    return _render_export_video_legacy_opencv(
+        analysis,
+        geom,
+        render_options,
+        clip_start=clip_start,
+        clip_end=clip_end,
+        clip_duration=clip_duration,
+        total_frames=total_frames,
+        progress_callback=progress_callback,
+    )
