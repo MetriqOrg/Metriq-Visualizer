@@ -1,0 +1,155 @@
+{
+  "app": "Metriq Visualizer",
+  "app_version": "1.10.13",
+  "format": "mvpreset",
+  "preset_name": "Glowstick",
+  "preset_schema_version": 1,
+  "saved_at_utc": "2026-04-22T02:05:06.770147+00:00",
+  "state": {
+    "export": {
+      "end_time": 167.996,
+      "fps": 30,
+      "height": 720,
+      "layout": {
+        "chromagram": {
+          "background_alpha": 0.06,
+          "content_scale": 1.0,
+          "enabled": true,
+          "fit_mode": "fill",
+          "h": 0.15,
+          "show_title": true,
+          "w": 0.2,
+          "x": 0.35,
+          "y": 0.8
+        },
+        "geometry": {
+          "background_alpha": 0.02,
+          "content_scale": 1.15,
+          "enabled": true,
+          "fit_mode": "contain",
+          "h": 0.72,
+          "show_title": true,
+          "w": 0.75,
+          "x": 0.03,
+          "y": 0.04
+        },
+        "mfcc": {
+          "background_alpha": 0.06,
+          "content_scale": 1.0,
+          "enabled": true,
+          "fit_mode": "fill",
+          "h": 0.15,
+          "show_title": true,
+          "w": 0.2,
+          "x": 0.56,
+          "y": 0.8
+        },
+        "preview": {
+          "background_alpha": 0.04,
+          "content_scale": 1.0,
+          "enabled": true,
+          "fit_mode": "contain",
+          "h": 0.18,
+          "show_title": true,
+          "w": 0.17,
+          "x": 0.8,
+          "y": 0.05
+        },
+        "spectrogram": {
+          "background_alpha": 0.06,
+          "content_scale": 1.0,
+          "enabled": true,
+          "fit_mode": "fill",
+          "h": 0.15,
+          "show_title": true,
+          "w": 0.31,
+          "x": 0.03,
+          "y": 0.8
+        },
+        "traces": {
+          "background_alpha": 0.06,
+          "content_scale": 1.0,
+          "enabled": true,
+          "fit_mode": "contain",
+          "h": 0.29,
+          "show_title": true,
+          "w": 0.2,
+          "x": 0.77,
+          "y": 0.33
+        }
+      },
+      "limit_range": false,
+      "preset_key": "core_landscape_720p",
+      "start_time": 0.0,
+      "width": 1280
+    },
+    "extraction": {
+      "hop_length": 256,
+      "low_volume_cutoff_db": 0.0,
+      "max_points": 3500,
+      "n_fft": 2048,
+      "sample_rate": 22050
+    },
+    "mapping": {
+      "color": "spectral_centroid_hz",
+      "color_label": "Brightness",
+      "colormap": "plasma",
+      "normalize": "zscore",
+      "preset_name": "Pitch/Timbre/Motion",
+      "size": "rms",
+      "size_label": "Loudness",
+      "x": "0.7*chroma_mean + 0.3*f0_hz",
+      "x_label": "Pitch",
+      "y": "0.6*mfcc_1 + 0.4*mfcc_2",
+      "y_label": "Timbre",
+      "z": "0.6*spectral_flux + 0.4*onset_strength",
+      "z_label": "Motion"
+    },
+    "motion": {
+      "autorotate": true,
+      "base_azimuth": 35.0,
+      "elevation": 24.0,
+      "rotation_speed": 16.0,
+      "zoom": 1.0
+    },
+    "performance": {
+      "live_point_budget": 2400,
+      "live_redraw_fps": 28,
+      "mode": "Balanced",
+      "preview_scale": 0.68
+    },
+    "schema_version": 84,
+    "ui": {
+      "show_panels": true,
+      "show_preview": false
+    },
+    "visual": {
+      "alpha": 1.0,
+      "comet_duration": 0.27999999999999997,
+      "connect_lines": true,
+      "curve_detail": 10,
+      "fade_curve": 0.39999999999999997,
+      "flash_duration": 0.02,
+      "flash_size_scale": 0.10000000000000002,
+      "ghost_path": false,
+      "halo_size_scale": 0.15000000000000002,
+      "head_size_scale": 0.0,
+      "history_mode": "Trail fade",
+      "line_width": 1.5500000000000138,
+      "max_point_labels": 8,
+      "path_curve_mode": "Smooth spline",
+      "point_label_content": "Time + Hz",
+      "point_label_mode": "Off",
+      "point_lifespan": 1.0,
+      "point_size_scale": 0.05,
+      "render_mode": "Points + line",
+      "show_axes": true,
+      "show_axis_labels": false,
+      "show_head_marker": true,
+      "tube_follow_size": true,
+      "tube_radius_scale": 1.0,
+      "tube_sides": 12,
+      "tube_taper": 0.2
+    }
+  }
+}
