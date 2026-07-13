@@ -2,16 +2,16 @@
   "schema": "metriq.complete-source-manifest",
   "schema_version": 1,
   "version": "1.12.5",
-  "generated_at": "2026-07-13T14:56:13+00:00",
+  "generated_at": "2026-07-13T16:10:32+00:00",
   "self_included": false,
-  "file_count": 91,
-  "total_bytes": 2762991,
+  "file_count": 95,
+  "total_bytes": 2813699,
   "files": [
     {
       "path": ".github/workflows/build-release.yml",
-      "bytes": 2524,
+      "bytes": 3194,
       "mode": "0644",
-      "sha256": "796cc17b1f7dafff7e8dde0a7e2cebba99e6298f34c3a791a42993b8e792aa7b"
+      "sha256": "0cc3f89f6985c511dcae814e07b6b9c64b5927cd036c9ff207a0eeec9ed148a2"
     },
     {
       "path": ".github/workflows/quality.yml",
@@ -27,9 +27,9 @@
     },
     {
       "path": "CHANGELOG.md",
-      "bytes": 9193,
+      "bytes": 10478,
       "mode": "0644",
-      "sha256": "0cd3ef63479c5cd7c21a7e32379ca67099c16f8e359b2d7b9a4d71f878830aca"
+      "sha256": "e5bc1303fe196c16845e5d49c82787cdb1ecf698e2c290e380319cb676ed9ae1"
     },
     {
       "path": "CODEX_IMPORT.md",
@@ -57,9 +57,9 @@
     },
     {
       "path": "README.md",
-      "bytes": 15522,
+      "bytes": 16568,
       "mode": "0644",
-      "sha256": "92b8026a4da4f752182105f077687b4b553bd6db33dd6de9f6b977aa6b961fa5"
+      "sha256": "bf71140afdf33e93ef9dd3fe827cbcc5c11e1319caf49022648858c2e6d7f3d4"
     },
     {
       "path": "TRADEMARKS.md",
@@ -291,9 +291,9 @@
     },
     {
       "path": "metriq_visualizer_app.py",
-      "bytes": 119290,
+      "bytes": 130184,
       "mode": "0644",
-      "sha256": "024bdf8f45b0e5d24c937cf92542f1012a82312f844076329270c91f646ea1bd"
+      "sha256": "825e3e261839c35a40bf5329cdbf3b5ac1c4326ef0bde33f50c9ad899c3e5bd0"
     },
     {
       "path": "metriq_visualizer_atomic.py",
@@ -386,10 +386,22 @@
       "sha256": "d95625746de9ebde97b350407ee909c3eab3703a4c09d1181e320ea1e30bc4fb"
     },
     {
+      "path": "metriq_visualizer_stage_output.py",
+      "bytes": 18873,
+      "mode": "0644",
+      "sha256": "263fd5b125f53e0b1d5fc1f51b404d2d9c3b8ae6d5ac4949adca95fd7cdffd4a"
+    },
+    {
       "path": "metriq_visualizer_theme.py",
       "bytes": 15838,
       "mode": "0644",
       "sha256": "0cc4be76a9d79354b52632e56b038e0b374623acb505717d9fcd24e8246135e7"
+    },
+    {
+      "path": "metriq_visualizer_updates.py",
+      "bytes": 11797,
+      "mode": "0644",
+      "sha256": "b8b1fe86ef98880be30c155a28573b545b2ba7ade047518b55c3961f5493fc1d"
     },
     {
       "path": "metriq_visualizer_visuals.py",
@@ -483,9 +495,9 @@
     },
     {
       "path": "tests/test_gui_smoke.py",
-      "bytes": 18285,
+      "bytes": 18762,
       "mode": "0644",
-      "sha256": "548b088ff7a5c1c4a4c3ce18ce72642c6e6013d353d625b29fee25eedf576789"
+      "sha256": "acdf6b02ac61a2c0c94d4f95883a0924de097e09d3d8bdfaf4bf0a2b970cc249"
     },
     {
       "path": "tests/test_layout.py",
@@ -524,10 +536,22 @@
       "sha256": "a77d48f07000611bef211681c0cdd9902374c2e7061243c1119f76addf62d4c5"
     },
     {
+      "path": "tests/test_stage_output.py",
+      "bytes": 2013,
+      "mode": "0644",
+      "sha256": "724bb626d9f0ffc01a4b50555293adba53215cc37e0f14cc188e03c35a78efa3"
+    },
+    {
       "path": "tests/test_theme.py",
       "bytes": 769,
       "mode": "0644",
       "sha256": "36fae09022ff0a7808aa616af0ef6f1e8aa352d1551f563f7ff5b806a91ebe95"
+    },
+    {
+      "path": "tests/test_updates.py",
+      "bytes": 3653,
+      "mode": "0644",
+      "sha256": "3f02ca0ef072f10f15dd9e1f4789f2648a02dbc412cbd061da9c2311ed7e2b1c"
     },
     {
       "path": "tests/test_v1125_regressions.py",
