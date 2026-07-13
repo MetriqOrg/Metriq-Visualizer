@@ -25,20 +25,6 @@ See [`CHANGELOG.md`](CHANGELOG.md), [`UPGRADE_1_12_5.md`](UPGRADE_1_12_5.md), an
 
 On normal app launches, Metriq checks the official GitHub releases in the background. **Check updates** runs the same check on demand. Only newer non-prerelease macOS app archives with GitHub's SHA-256 digest are eligible. After explicit approval, Metriq verifies the archive digest, bundle identity/version, and macOS signature before it closes and replaces itself; release source ZIPs and unverifiable assets are never auto-installed.
 
-## 1.12.2 foundation: restore the visualizer as the product core
-
-The v1.12.0/v1.12.1 application shell moved too far away from the original Visualizer. In particular, it replaced the original genuine Matplotlib 3D scene with a flattened projection in the primary workflow. That was an architectural regression, not a cosmetic issue.
-
-v1.12.2 corrected it:
-
-- The main window again centers a **real interactive 3D axes scene** with perspective, depth, orbit, zoom, axis controls, labels, trails, splines, tubes, points, color mapping, and autorotation.
-- Interactive playback and exported geometry use the same `Matplotlib3DScene` implementation. Export Studio no longer produces a different flattened interpretation of the project.
-- The original-style temporal cues are restored: moving comet trail, current-point head, halo, and decaying flash, with adjustable duration and scale.
-- Source video, waveform, spectrogram, chromagram, MFCC, and mapped traces are subordinate panels in a collapsible **bottom analysis dock**. The dock starts collapsed so the 3D viewport remains dominant.
-- The newer audio playback, Export Studio, cache, live-input, data-export, and reliability work remains available around the restored visualizer instead of replacing it.
-
-This release also fixes data/sample alignment after filtering, full-static head tracking, current-point label selection, ignored label formats, preview-density enforcement, stale Export Studio previews after profile loading, and invisible space reserved by the collapsed analysis dock.
-
 ## Core workflow
 
 1. Open local audio, video, or numeric table data.
