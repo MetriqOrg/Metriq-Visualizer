@@ -11,6 +11,7 @@ and retaining the creator-oriented Export Studio around that core.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import traceback
 from collections.abc import Mapping
@@ -143,6 +144,23 @@ def _safe_int(value: Any, default: int) -> int:
         return default
 
 
+def _application_settings() -> QSettings:
+    """Return the normal app settings, or an explicit isolated settings file.
+
+    ``METRIQ_SETTINGS_PATH`` is intentionally opt-in.  It gives automated
+    checks a reliable settings location on macOS, where ``QSettings`` ignores
+    the XDG test directories and would otherwise overwrite a real user's
+    recoverable session.
+    """
+
+    configured_path = os.environ.get("METRIQ_SETTINGS_PATH", "").strip()
+    if not configured_path:
+        return QSettings("Metriq", "Metriq Visualizer")
+    settings_path = Path(configured_path).expanduser()
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    return QSettings(str(settings_path), QSettings.Format.IniFormat)
+
+
 class AnalysisWorker(QObject):
     finished = Signal(object)
     failed = Signal(str)
@@ -172,7 +190,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1080, 700)
         self.setAcceptDrops(True)
 
-        self.settings = QSettings("Metriq", "Metriq Visualizer")
+        self.settings = _application_settings()
         self.theme_name = str(self.settings.value("theme", "dark"))
         self.recent_paths = self._load_recent_paths()
         self.visual_preset_paths: dict[str, Path] = {}
@@ -181,6 +199,8 @@ class MainWindow(QMainWindow):
         )
         self.adaptive_preview = AdaptivePreviewController()
         self._last_preview_draw_ms = 0.0
+        self._analysis_cursor_clock = QElapsedTimer()
+        self._analysis_cursor_clock.start()
         self.analysis_settings = AnalysisSettings()
         self._applying_analysis_profile = False
         self.live_input_dock: QDockWidget | None = None
@@ -1427,12 +1447,10 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _viewport_interaction_started(self) -> None:
-        # Manual orbit and autorotation are mutually exclusive; otherwise the
-        # next playback frame would immediately overwrite the user's camera.
-        if self.autorotate_check.isChecked():
-            with QSignalBlocker(self.autorotate_check):
-                self.autorotate_check.setChecked(False)
-            self._mark_preview_dirty()
+        # The viewport pauses its timer while a drag is in progress, then
+        # resumes automatically.  Keep the user's autorotate selection intact
+        # instead of silently turning the control off on first interaction.
+        return
 
     @Slot(float, float, float)
     def _viewport_camera_changed(self, elev: float, azim: float, zoom: float) -> None:
@@ -1587,7 +1605,17 @@ class MainWindow(QMainWindow):
                 if live_proxy or needs_exact_draw
                 else False
             )
-            self.analysis_dock.set_time(self.current_time)
+            # The scientific panels are Matplotlib canvases.  Updating their
+            # cursor on every 3D playback frame can starve the realtime
+            # renderer, especially with a visible spectrogram.  Keep the
+            # cursor state current but request its expensive canvas paint at a
+            # human-smooth 8 Hz while the live proxy is active.
+            draw_analysis_cursor = (
+                not live_proxy or self._analysis_cursor_clock.elapsed() >= 125
+            )
+            self.analysis_dock.set_time(self.current_time, draw=draw_analysis_cursor)
+            if draw_analysis_cursor:
+                self._analysis_cursor_clock.restart()
             profile_name = self.performance_combo.currentText() if live_proxy else "Refined idle"
             draw_state = "DRAW" if rendered else "COALESCED"
             pixel_ratio = self.viewport.render_pixel_ratio()

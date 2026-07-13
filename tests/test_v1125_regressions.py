@@ -15,6 +15,8 @@ from scipy.io import wavfile
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("MPLBACKEND", "Agg")
+_TEST_SETTINGS_ROOT = Path(tempfile.mkdtemp(prefix="metriq-visualizer-regression-settings-"))
+os.environ.setdefault("METRIQ_SETTINGS_PATH", str(_TEST_SETTINGS_ROOT / "settings.ini"))
 
 from PySide6.QtWidgets import QApplication, QGroupBox  # noqa: E402
 
@@ -35,6 +37,7 @@ from metriq_visualizer_core import (  # noqa: E402
     build_geometry,
 )
 from metriq_visualizer_live import LiveAudioEngine, LiveInputPanel  # noqa: E402
+from metriq_visualizer_panels import AnalysisDockWidget  # noqa: E402
 from metriq_visualizer_realtime import Realtime3DCanvas, advance_azimuth, camera_after_drag  # noqa: E402
 from metriq_visualizer_render import ExportOptions  # noqa: E402
 
@@ -114,6 +117,37 @@ class CameraAndMotionRegressionTests(unittest.TestCase):
         viewport._realtime_interaction_finished()
         self.assertFalse(viewport._fast_active())
         viewport.clear_scene()
+
+    def test_autorotate_pauses_for_drag_then_resumes_without_losing_selection(self) -> None:
+        viewport = Interactive3DViewport()
+        points = np.column_stack(
+            (
+                np.linspace(-1.0, 1.0, 64),
+                np.sin(np.linspace(0.0, 5.0, 64)),
+                np.cos(np.linspace(0.0, 5.0, 64)),
+            )
+        )
+        viewport.set_live_trajectory(points, options=ExportOptions(autorotate=True))
+        self.assertTrue(viewport.autorotate_timer.isActive())
+        viewport._realtime_interaction_started()
+        self.assertTrue(viewport.options.autorotate)
+        self.assertFalse(viewport.autorotate_timer.isActive())
+        viewport._realtime_interaction_finished()
+        self.assertTrue(viewport.autorotate_timer.isActive())
+        viewport.clear_scene()
+
+    def test_analysis_dock_can_update_cursor_without_queueing_a_canvas_repaint(self) -> None:
+        temporary, analysis, geometry = self._fixture()
+        self.addCleanup(temporary.cleanup)
+        dock = AnalysisDockWidget()
+        dock.set_data(analysis, geometry)
+        dock.tabs.setCurrentWidget(dock.spectrogram)
+        with patch.object(dock.spectrogram, "draw_idle") as draw_idle:
+            dock.set_time(0.5, draw=False)
+            draw_idle.assert_not_called()
+            dock.set_time(1.0, draw=True)
+            draw_idle.assert_called_once()
+        dock.deleteLater()
 
     def test_zoom_scales_grid_and_data_through_the_same_transform(self) -> None:
         canvas = Realtime3DCanvas()

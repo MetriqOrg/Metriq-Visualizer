@@ -4,14 +4,14 @@ Version 1.12.5 is a corrective release built on the restored original-style 3D w
 
 ## Camera and viewport
 
-- Autorotation now has its own elapsed-time clock and works while paused or while live input is active.
+- Autorotation now has its own elapsed-time clock and works while paused or while live input is active. Manual camera drags pause it temporarily and resume it on release without changing the selected control.
 - Export autorotation remains tied to source time for reproducible frames.
 - Mouse orbit uses logical-pixel deltas, bounded elevation, and normalized azimuth rather than Matplotlib's default 3D drag handler.
 - The realtime canvas stays active from mouse press through release, preventing a delayed option refresh from swapping renderers mid-drag.
 - Zoom transforms data, grid, axes, and labels as one coordinate field.
 - Elevation is consistent across the realtime and exact views: **90°** looks straight down at the XY plane, while **0°** is level with it.
 - Appearance now has a separate **Show grid planes** control. Grid lines remain behind the visualizer and the exact view uses transparent panes, so a plane never hides the data.
-- A static refined scene is no longer redrawn by idle callbacks. Live autorotation uses the selected preview target rate, avoiding unnecessary CPU work.
+- A static refined scene is no longer redrawn by idle callbacks. The selected analysis panel's cursor repaints at 8 Hz while 3D playback is active, and live autorotation uses the selected preview target rate, avoiding unnecessary CPU work.
 
 ## Analysis controls
 
