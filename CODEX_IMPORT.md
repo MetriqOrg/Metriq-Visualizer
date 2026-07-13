@@ -1,10 +1,10 @@
 # Codex import and GitHub handoff
 
-This archive contains the complete Metriq Visualizer 1.12.6 source tree. It can be opened independently or merged into an existing clone while preserving `.git`, branches, tags, remotes, and unrelated files.
+This archive contains the complete Metriq Visualizer 1.12.7 source tree. It can be opened independently or merged into an existing clone while preserving `.git`, branches, tags, remotes, and unrelated files.
 
 ## Safe merge
 
-From the extracted v1.12.6 folder:
+From the extracted v1.12.7 folder:
 
 ```bash
 python tools/merge_into_repo.py --target /path/to/Metriq-Visualizer --dry-run --json
@@ -26,7 +26,7 @@ They are added to `.git/info/exclude`, not the committed `.gitignore`.
 
 ```bash
 cd /path/to/Metriq-Visualizer
-git switch -c feature/metriq-visualizer-1.12.6
+git switch -c feature/metriq-visualizer-1.12.7
 git status --short
 git diff --stat
 git diff
@@ -45,8 +45,8 @@ With a desktop environment, launch `python metriq_visualizer_app.py` and verify 
 
 ```bash
 git add -A
-git commit -m "Release Metriq Visualizer 1.12.6"
-git push -u origin feature/metriq-visualizer-1.12.6
+git commit -m "Release Metriq Visualizer 1.12.7"
+git push -u origin feature/metriq-visualizer-1.12.7
 ```
 
 Use a normal pull request. The source archive contains no replacement `.git` directory and performs no GitHub authentication.

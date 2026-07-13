@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.12.7 — cross-platform release hardening
+
+### Fixed
+
+- GitHub release builds now produce Linux x64, Windows x64, macOS Apple Silicon, and macOS Intel artifacts with a SHA-256 manifest.
+- Complete-source manifest checksums now have stable text line endings across platform checkouts.
+- Update selection tests specify their target CPU, while macOS-only installer and code-signing checks no longer run on non-macOS CI agents.
+
 ## 1.12.6 — audience output and verified updates
 
 ### Added

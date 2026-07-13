@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import plistlib
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -18,16 +19,16 @@ from metriq_visualizer_updates import (
 
 class UpdateTests(unittest.TestCase):
     @staticmethod
-    def _release(*, version: str = "v1.12.6", prerelease: bool = False, name: str = "Metriq-Visualizer-macos-arm64.zip") -> dict:
+    def _release(*, version: str = "v1.12.7", prerelease: bool = False, name: str = "Metriq-Visualizer-macos-arm64.zip") -> dict:
         return {
             "tag_name": version,
             "prerelease": prerelease,
             "draft": False,
-            "html_url": "https://github.com/MetriqOrg/Metriq-Visualizer/releases/tag/v1.12.6",
+            "html_url": "https://github.com/MetriqOrg/Metriq-Visualizer/releases/tag/v1.12.7",
             "assets": [
                 {
                     "name": name,
-                    "browser_download_url": "https://github.com/MetriqOrg/Metriq-Visualizer/releases/download/v1.12.6/Metriq-Visualizer-macos-arm64.zip",
+                    "browser_download_url": "https://github.com/MetriqOrg/Metriq-Visualizer/releases/download/v1.12.7/Metriq-Visualizer-macos-arm64.zip",
                     "digest": "sha256:" + "a" * 64,
                     "size": 123,
                 }
@@ -35,27 +36,31 @@ class UpdateTests(unittest.TestCase):
         }
 
     def test_update_selection_requires_new_stable_verified_macos_asset(self) -> None:
-        self.assertTrue(is_newer_version("1.12.6", "1.12.5"))
+        self.assertTrue(is_newer_version("1.12.7", "1.12.5"))
         self.assertFalse(is_newer_version("1.12.5-beta", "1.12.5"))
         self.assertIsNone(available_update("1.12.5", [self._release(prerelease=True)]))
         self.assertIsNone(available_update("1.12.5", [self._release(name="Metriq-Visualizer-Complete-Source.zip")]))
-        update = available_update("1.12.5", [self._release(), self._release(version="v1.12.7")])
+        update = available_update(
+            "1.12.5",
+            [self._release(), self._release(version="v1.12.8")],
+            machine="arm64",
+        )
         self.assertIsNotNone(update)
         assert update is not None
-        self.assertEqual(update.version, "1.12.7")
+        self.assertEqual(update.version, "1.12.8")
         self.assertEqual(update.asset_name, "Metriq-Visualizer-macos-arm64.zip")
 
     def test_update_selection_matches_the_macos_cpu_architecture(self) -> None:
         release = self._release()
         release["assets"] = [
             {
-                "name": "Metriq-Visualizer-v1.12.6-macOS-arm64.zip",
+                "name": "Metriq-Visualizer-v1.12.7-macOS-arm64.zip",
                 "browser_download_url": "https://example.test/arm64.zip",
                 "digest": "sha256:" + "a" * 64,
                 "size": 123,
             },
             {
-                "name": "Metriq-Visualizer-v1.12.6-macOS-x86_64.zip",
+                "name": "Metriq-Visualizer-v1.12.7-macOS-x86_64.zip",
                 "browser_download_url": "https://example.test/x86_64.zip",
                 "digest": "sha256:" + "b" * 64,
                 "size": 456,
@@ -68,8 +73,8 @@ class UpdateTests(unittest.TestCase):
         self.assertIsNotNone(arm)
         self.assertIsNotNone(intel)
         assert arm is not None and intel is not None
-        self.assertEqual(arm.asset_name, "Metriq-Visualizer-v1.12.6-macOS-arm64.zip")
-        self.assertEqual(intel.asset_name, "Metriq-Visualizer-v1.12.6-macOS-x86_64.zip")
+        self.assertEqual(arm.asset_name, "Metriq-Visualizer-v1.12.7-macOS-arm64.zip")
+        self.assertEqual(intel.asset_name, "Metriq-Visualizer-v1.12.7-macOS-x86_64.zip")
 
     def test_extracted_bundle_must_match_metriq_identity_and_release_version(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -81,14 +86,15 @@ class UpdateTests(unittest.TestCase):
                     plistlib.dumps(
                         {
                             "CFBundleIdentifier": APP_BUNDLE_IDENTIFIER,
-                            "CFBundleShortVersionString": "1.12.6",
+                            "CFBundleShortVersionString": "1.12.7",
                         }
                     ),
                 )
-            update = UpdateInfo("1.12.6", archive.name, "https://example.test/app.zip", "a" * 64, 0, "https://example.test")
+            update = UpdateInfo("1.12.7", archive.name, "https://example.test/app.zip", "a" * 64, 0, "https://example.test")
             bundle = extract_verified_app(archive, root / "stage", update)
             self.assertEqual(bundle.name, "Metriq Visualizer.app")
 
+    @unittest.skipUnless(sys.platform == "darwin", "macOS-only install script")
     def test_install_is_deferred_to_a_script_after_the_app_exits(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

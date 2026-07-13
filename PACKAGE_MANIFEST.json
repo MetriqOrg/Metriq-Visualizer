@@ -2,11 +2,17 @@
   "schema": "metriq.complete-source-manifest",
   "schema_version": 1,
   "version": "1.12.6",
-  "generated_at": "2026-07-13T18:00:00+00:00",
+  "generated_at": "2026-07-13T19:07:00+00:00",
   "self_included": false,
-  "file_count": 95,
-  "total_bytes": 2821212,
+  "file_count": 96,
+  "total_bytes": 2822113,
   "files": [
+    {
+      "path": ".gitattributes",
+      "bytes": 183,
+      "mode": "0644",
+      "sha256": "03c7c0e06feb91ea63d697dc6d366219093a45a06aba1c2321695af3368734eb"
+    },
     {
       "path": ".github/workflows/build-release.yml",
       "bytes": 3722,
@@ -27,21 +33,21 @@
     },
     {
       "path": "CHANGELOG.md",
-      "bytes": 10769,
+      "bytes": 11199,
       "mode": "0644",
-      "sha256": "2e0b46ac8aff0763168f023f9685fdbcea9e1ed32d986237e2b277eb25e2fd31"
+      "sha256": "ae6fb804b7bf4ee1c1ea03c66b81df0781c4514c8b7b5d2c2c7436f9c1369bcf"
     },
     {
       "path": "CODEX_IMPORT.md",
       "bytes": 2104,
       "mode": "0644",
-      "sha256": "b751cdce66669727712c9f2416d24c64231a4a0e3b7774ef62cb49893ac9f691"
+      "sha256": "c351a948545b412ce289d326d3aa498b4f5f0f82173c943d733b077946abc0ef"
     },
     {
       "path": "CODEX_PROMPT.txt",
       "bytes": 1934,
       "mode": "0644",
-      "sha256": "32d18cfb02c0067bfa90dd4e7fdbe61c75f10fdcacc556bfd87bf7accb4a4ba8"
+      "sha256": "70f6088f0ec80b2927e62351cc6c89b701830cdea91cb825f2ac748a8cd0e301"
     },
     {
       "path": "LICENSE",
@@ -57,9 +63,9 @@
     },
     {
       "path": "README.md",
-      "bytes": 16469,
+      "bytes": 16516,
       "mode": "0644",
-      "sha256": "92f7a1ae40415cfb6a5ab7b630e75b929203586720723971adf231c2bff028b3"
+      "sha256": "7b481203d54f263c319996c1b76cb3bbef0200725042aa0292716ff43e6e3170"
     },
     {
       "path": "TRADEMARKS.md",
@@ -101,7 +107,7 @@
       "path": "VERSION.txt",
       "bytes": 7,
       "mode": "0644",
-      "sha256": "054c4ee293061b6ceb58529b43f2651cc873ee52e1814ac2f4190554d073eff4"
+      "sha256": "dd67279cf5947239952992ae25ead520fa85909e9da83400c3eb7d6c3e932534"
     },
     {
       "path": "assets/ASSET_NOTICE.md",
@@ -161,7 +167,7 @@
       "path": "docs/MACOS.md",
       "bytes": 1798,
       "mode": "0644",
-      "sha256": "f049f4c620498e9083ebf27c952b86dd2af61943784387522e97846b350e4712"
+      "sha256": "02281cc728f1a8a3552bca8e27f0d192fdf8d8cbe18f8142a44a01183383dde6"
     },
     {
       "path": "docs/PERFORMANCE.md",
@@ -173,7 +179,7 @@
       "path": "docs/RELEASE_BUILDS.md",
       "bytes": 2693,
       "mode": "0644",
-      "sha256": "f96cb7561abf15c34e1f2def9e721bd1337429dcd87e1eb59599a874bba9d178"
+      "sha256": "140487dc119f9a99c500a0b1be26eea4c923506c3310e2d3584554fc4b06e19b"
     },
     {
       "path": "docs/ROADMAP.md",
@@ -293,7 +299,7 @@
       "path": "metriq_visualizer_app.py",
       "bytes": 130446,
       "mode": "0644",
-      "sha256": "1d72119553fbce1bf0c01cf7cb1c2b6dceb4fef3a6c39fb4deb5375992532d67"
+      "sha256": "e76f889e8161bcd2cd0cb07eebdeb1d41a68e7af61f0fb33cfc3476c520f36d3"
     },
     {
       "path": "metriq_visualizer_atomic.py",
@@ -437,7 +443,7 @@
       "path": "pyproject.toml",
       "bytes": 2179,
       "mode": "0644",
-      "sha256": "633058908d92e929109a02def8a80d2edfba0120c673a15e3bb0d84d412bfcc0"
+      "sha256": "1a52dd9b968189d98a449bead84943845063a59422cf77936c20da3cea67aaa3"
     },
     {
       "path": "requirements.txt",
@@ -497,7 +503,7 @@
       "path": "tests/test_gui_smoke.py",
       "bytes": 18762,
       "mode": "0644",
-      "sha256": "be263e7b28691ba04cb983d0c01a96d923eca664c78cce68b24a0677586a8f7e"
+      "sha256": "2605ef9478d0a9f929bbe7eda3d772dc65caaabdedf7502b95743fd4c9254907"
     },
     {
       "path": "tests/test_layout.py",
@@ -515,7 +521,7 @@
       "path": "tests/test_merge_tool.py",
       "bytes": 5004,
       "mode": "0644",
-      "sha256": "8d7587bb02a6561453514fdfb0b3674e73347091b83fa679851b1baa8cc4809b"
+      "sha256": "163d43a11047c7f4e937744c10e4b2943ecdc3dffd9e74699a9d17e08e0409cf"
     },
     {
       "path": "tests/test_performance.py",
@@ -549,15 +555,15 @@
     },
     {
       "path": "tests/test_updates.py",
-      "bytes": 4748,
+      "bytes": 4903,
       "mode": "0644",
-      "sha256": "1660d69f15497c7747f9221d1a217fc0df885365178cbd8a67381c8d464253c7"
+      "sha256": "7c6934959ed15fcfbdf96dec6b04205a48cd2ad68cbbe734f1f27d9b0e647d45"
     },
     {
       "path": "tests/test_v1125_regressions.py",
-      "bytes": 21382,
+      "bytes": 21468,
       "mode": "0644",
-      "sha256": "3a58b9526b966cfb95740b417cf5ca196f26b7069e49cf605a2fecc8335456d5"
+      "sha256": "e10fb1533e8e09ef9b07501fd3aa0ee7c29450e1d382dee389a56a76636ecf91"
     },
     {
       "path": "tests/test_visuals.py",
@@ -575,7 +581,7 @@
       "path": "tools/verify_source.py",
       "bytes": 3325,
       "mode": "0755",
-      "sha256": "688b72b714cd4977796b15976f96f89a75e5aa4b57177c0b4a3f469354091b50"
+      "sha256": "68913fbcd7f622a5adee60f5d680f20ab9925c1c89e36de6a4cc95b9bf19a94e"
     }
   ]
 }

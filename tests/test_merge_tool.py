@@ -29,7 +29,7 @@ class MergeToolTests(unittest.TestCase):
             self.assertEqual(head.read_text(encoding="utf-8"), "ref: refs/heads/main\n")
             self.assertEqual(unrelated.read_text(encoding="utf-8"), "preserve me\n")
             self.assertTrue((target / REPORT_NAME).is_file())
-            self.assertIn("Metriq Visualizer v1.12.6", readme.read_text(encoding="utf-8"))
+            self.assertIn("Metriq Visualizer v1.12.7", readme.read_text(encoding="utf-8"))
 
             readme_action = next(action for action in applied["actions"] if action["path"] == "README.md")
             backup = target / readme_action["backup"]
