@@ -25,28 +25,34 @@ none is available.
 `.github/workflows/quality.yml` runs static checks, compilation, unit tests, and
 an offscreen application smoke test.
 
-`.github/workflows/build-release.yml` builds on Linux, Windows, and macOS when
-manually dispatched or when a `v*` tag is pushed. It uploads platform artifacts
-to the workflow run.
+`.github/workflows/build-release.yml` builds Linux x64, Windows x64, macOS
+Apple Silicon, and macOS Intel artifacts when manually dispatched or when a
+`v*` tag is pushed. Tagged builds publish a GitHub Release with generated notes
+and a `SHA256SUMS.txt` manifest.
 
 Suggested release process:
 
 ```bash
 git switch main
-git pull --ff-only
+git fetch origin --prune
+git pull --ff-only origin main
 python tools/verify_source.py --imports
 QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -p 'test_*.py' -v
-git tag -s v1.12.5 -m "Metriq Visualizer 1.12.5"
-git push origin v1.12.5
+git tag -a v1.12.6 -m "Metriq Visualizer 1.12.6"
+git push origin main v1.12.6
 ```
 
-Review all generated artifacts before attaching them to a public release.
+Review the completed workflow, each platform artifact, and `SHA256SUMS.txt`
+before announcing a public release. Use a signed tag instead of an annotated
+tag when a release-signing key is available.
 
 ## Platform artifact names
 
-- `Metriq-Visualizer-1.12.5-Linux-x86_64.tar.gz`
-- `Metriq-Visualizer-1.12.5-Windows-x86_64.zip`
-- `Metriq-Visualizer-1.12.5-macOS-arm64.zip`
+- `Metriq-Visualizer-v1.12.6-Linux-x86_64.tar.gz`
+- `Metriq-Visualizer-v1.12.6-Windows-x86_64.zip`
+- `Metriq-Visualizer-v1.12.6-macOS-arm64.zip`
+- `Metriq-Visualizer-v1.12.6-macOS-x86_64.zip`
+- `SHA256SUMS.txt`
 
 Runner architecture determines actual compatibility. Apple Silicon and Intel
 macOS should not be represented as interchangeable unless a universal build is
@@ -54,7 +60,14 @@ explicitly produced and tested.
 
 ## Signing
 
-- macOS distribution should use Developer ID signing and notarization.
-- Windows distribution should use Authenticode signing.
-- Release checksum files should be generated after signing and packaging.
-- Source ZIP checksums should be published separately from binary checksums.
+- macOS public distribution requires a Developer ID Application certificate,
+  hardened-runtime signing, and Apple notarization. The repository's ad-hoc
+  signature keeps the self-updater verifiable during local development, but it
+  is not a substitute for Developer ID distribution.
+- Windows public distribution requires an Authenticode certificate and
+  timestamping service.
+- Add the corresponding protected GitHub Actions secrets before treating a
+  cross-platform release as publicly signed; never commit certificates,
+  private keys, passwords, or API credentials.
+- Checksums are generated after packaging. Source-archive checksums, if
+  published, stay separate from binary checksums.

@@ -2,22 +2,22 @@
   "schema": "metriq.complete-source-manifest",
   "schema_version": 1,
   "version": "1.12.6",
-  "generated_at": "2026-07-13T17:06:00+00:00",
+  "generated_at": "2026-07-13T18:00:00+00:00",
   "self_included": false,
   "file_count": 95,
-  "total_bytes": 2817146,
+  "total_bytes": 2821212,
   "files": [
     {
       "path": ".github/workflows/build-release.yml",
-      "bytes": 3194,
+      "bytes": 3722,
       "mode": "0644",
-      "sha256": "0cc3f89f6985c511dcae814e07b6b9c64b5927cd036c9ff207a0eeec9ed148a2"
+      "sha256": "dc00516f6c928b890a68e0ee72a8ecc32466aaa7a8631c0aa4d41eaa63f213e2"
     },
     {
       "path": ".github/workflows/quality.yml",
       "bytes": 1558,
       "mode": "0644",
-      "sha256": "067b98e06de1e1308d5b1608329a241dffed7f7eb09cd50f6ded795033e82ded"
+      "sha256": "7573bf1a5a5ee4a3379fcc9a9524d1af6e8f0fa1d1e4c2b4e214ecd32cd83442"
     },
     {
       "path": ".gitignore",
@@ -27,21 +27,21 @@
     },
     {
       "path": "CHANGELOG.md",
-      "bytes": 10474,
+      "bytes": 10769,
       "mode": "0644",
-      "sha256": "400611f410f630e7a45c9958f2507f9a3050f5014b7b0f635f28a6d8cf5f04a0"
+      "sha256": "2e0b46ac8aff0763168f023f9685fdbcea9e1ed32d986237e2b277eb25e2fd31"
     },
     {
       "path": "CODEX_IMPORT.md",
       "bytes": 2104,
       "mode": "0644",
-      "sha256": "d57803eb0d2caf9afd84afd039f3311e060f0dbda1b8962b8923590d3bbe0777"
+      "sha256": "b751cdce66669727712c9f2416d24c64231a4a0e3b7774ef62cb49893ac9f691"
     },
     {
       "path": "CODEX_PROMPT.txt",
       "bytes": 1934,
       "mode": "0644",
-      "sha256": "a6cd118d63dba627305c079085567462537ae9a454042b43f1a84c2f7386032d"
+      "sha256": "32d18cfb02c0067bfa90dd4e7fdbe61c75f10fdcacc556bfd87bf7accb4a4ba8"
     },
     {
       "path": "LICENSE",
@@ -57,9 +57,9 @@
     },
     {
       "path": "README.md",
-      "bytes": 16476,
+      "bytes": 16469,
       "mode": "0644",
-      "sha256": "c9d247c5dee1b8bd3118ad90751368938589422c48b650679eca62f9324d0dc2"
+      "sha256": "92f7a1ae40415cfb6a5ab7b630e75b929203586720723971adf231c2bff028b3"
     },
     {
       "path": "TRADEMARKS.md",
@@ -161,7 +161,7 @@
       "path": "docs/MACOS.md",
       "bytes": 1798,
       "mode": "0644",
-      "sha256": "4c360a464559f08238a98db720edcc5fc8734c5d686b3656f553b5474da489ca"
+      "sha256": "f049f4c620498e9083ebf27c952b86dd2af61943784387522e97846b350e4712"
     },
     {
       "path": "docs/PERFORMANCE.md",
@@ -171,9 +171,9 @@
     },
     {
       "path": "docs/RELEASE_BUILDS.md",
-      "bytes": 1956,
+      "bytes": 2693,
       "mode": "0644",
-      "sha256": "732c57e2a2b4ea52b2b52b7c4997e9f19f104e7de66b0e04a55a1dd763c784d8"
+      "sha256": "f96cb7561abf15c34e1f2def9e721bd1337429dcd87e1eb59599a874bba9d178"
     },
     {
       "path": "docs/ROADMAP.md",
@@ -399,9 +399,9 @@
     },
     {
       "path": "metriq_visualizer_updates.py",
-      "bytes": 11797,
+      "bytes": 13215,
       "mode": "0644",
-      "sha256": "b8b1fe86ef98880be30c155a28573b545b2ba7ade047518b55c3961f5493fc1d"
+      "sha256": "55f25eae691fa0e7fecfdfcc780bd71d0ddc0982557a72ec7fc5137508e69631"
     },
     {
       "path": "metriq_visualizer_visuals.py",
@@ -549,9 +549,9 @@
     },
     {
       "path": "tests/test_updates.py",
-      "bytes": 3653,
+      "bytes": 4748,
       "mode": "0644",
-      "sha256": "3f02ca0ef072f10f15dd9e1f4789f2648a02dbc412cbd061da9c2311ed7e2b1c"
+      "sha256": "1660d69f15497c7747f9221d1a217fc0df885365178cbd8a67381c8d464253c7"
     },
     {
       "path": "tests/test_v1125_regressions.py",

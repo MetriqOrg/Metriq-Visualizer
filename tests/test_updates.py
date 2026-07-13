@@ -45,6 +45,32 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(update.version, "1.12.7")
         self.assertEqual(update.asset_name, "Metriq-Visualizer-macos-arm64.zip")
 
+    def test_update_selection_matches_the_macos_cpu_architecture(self) -> None:
+        release = self._release()
+        release["assets"] = [
+            {
+                "name": "Metriq-Visualizer-v1.12.6-macOS-arm64.zip",
+                "browser_download_url": "https://example.test/arm64.zip",
+                "digest": "sha256:" + "a" * 64,
+                "size": 123,
+            },
+            {
+                "name": "Metriq-Visualizer-v1.12.6-macOS-x86_64.zip",
+                "browser_download_url": "https://example.test/x86_64.zip",
+                "digest": "sha256:" + "b" * 64,
+                "size": 456,
+            },
+        ]
+
+        arm = available_update("1.12.5", [release], machine="arm64")
+        intel = available_update("1.12.5", [release], machine="x86_64")
+
+        self.assertIsNotNone(arm)
+        self.assertIsNotNone(intel)
+        assert arm is not None and intel is not None
+        self.assertEqual(arm.asset_name, "Metriq-Visualizer-v1.12.6-macOS-arm64.zip")
+        self.assertEqual(intel.asset_name, "Metriq-Visualizer-v1.12.6-macOS-x86_64.zip")
+
     def test_extracted_bundle_must_match_metriq_identity_and_release_version(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -83,4 +109,3 @@ class UpdateTests(unittest.TestCase):
             self.assertEqual(launched[0][0][0], "/bin/sh")
             self.assertIn("while kill -0 424242", script.read_text(encoding="utf-8"))
             self.assertIn(str(staged), script.read_text(encoding="utf-8"))
-

@@ -6,7 +6,7 @@ Metriq Visualizer is an open-source, local-first **interactive 3D media and data
 
 Version 1.12.6 keeps the restored original visualizer workspace while adding configurable second-screen Stage Output and verified GitHub release updates.
 
-![Metriq Visualizer 1.12.5 workspace](docs/images/main-workspace-v1125.png)
+![Metriq Visualizer workspace](docs/images/main-workspace-v1125.png)
 
 ## 1.12.6: verified updates and second-screen output
 
@@ -192,7 +192,7 @@ sudo apt update
 sudo apt install ffmpeg python3 python3-pip python3-venv \
   libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 libpulse0 libportaudio2
 
-cd Metriq-Visualizer-v1.12.5
+cd Metriq-Visualizer-v1.12.6
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip

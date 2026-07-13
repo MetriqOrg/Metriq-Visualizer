@@ -41,8 +41,8 @@ jobs:
           app = QApplication.instance() or QApplication([])
           window = app_module.MainWindow()
           app.processEvents()
-          assert app_module.APP_VERSION == "1.12.5"
-          assert window.windowTitle() == "Metriq Visualizer v1.12.5"
+          assert app_module.APP_VERSION == "1.12.6"
+          assert window.windowTitle() == "Metriq Visualizer v1.12.6"
           window.close()
           app.processEvents()
           print("offscreen application smoke: ok")
