@@ -2,7 +2,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
 """Metriq Visualizer desktop studio.
 
-Version 1.12.6 preserves the original visualizer-first window and genuine
+Version 1.12.7 preserves the original visualizer-first window and genuine
 interactive 3D scene while repairing camera interaction, restoring configurable
 audio extraction, integrating microphone trajectories into the main viewport,
 and retaining the creator-oriented Export Studio around that core.
@@ -94,7 +94,7 @@ from metriq_visualizer_updates import UpdateInfo, check_for_update, installed_ap
 sys.dont_write_bytecode = True
 
 APP_NAME = "Metriq Visualizer"
-APP_VERSION = "1.12.6"
+APP_VERSION = "1.12.7"
 APP_WINDOW_TITLE = f"{APP_NAME} v{APP_VERSION}"
 
 SUPPORTED_FILES = (

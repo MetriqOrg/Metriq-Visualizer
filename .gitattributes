@@ -1,0 +1,6 @@
+# Keep complete-source manifest hashes stable in every CI checkout.
+* text=auto eol=lf
+
+# Treat shipped media as binary regardless of platform Git settings.
+*.gif binary
+*.png binary

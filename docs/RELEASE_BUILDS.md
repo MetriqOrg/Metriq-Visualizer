@@ -38,8 +38,8 @@ git fetch origin --prune
 git pull --ff-only origin main
 python tools/verify_source.py --imports
 QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -p 'test_*.py' -v
-git tag -a v1.12.6 -m "Metriq Visualizer 1.12.6"
-git push origin main v1.12.6
+git tag -a v1.12.7 -m "Metriq Visualizer 1.12.7"
+git push origin main v1.12.7
 ```
 
 Review the completed workflow, each platform artifact, and `SHA256SUMS.txt`
@@ -48,10 +48,10 @@ tag when a release-signing key is available.
 
 ## Platform artifact names
 
-- `Metriq-Visualizer-v1.12.6-Linux-x86_64.tar.gz`
-- `Metriq-Visualizer-v1.12.6-Windows-x86_64.zip`
-- `Metriq-Visualizer-v1.12.6-macOS-arm64.zip`
-- `Metriq-Visualizer-v1.12.6-macOS-x86_64.zip`
+- `Metriq-Visualizer-v1.12.7-Linux-x86_64.tar.gz`
+- `Metriq-Visualizer-v1.12.7-Windows-x86_64.zip`
+- `Metriq-Visualizer-v1.12.7-macOS-arm64.zip`
+- `Metriq-Visualizer-v1.12.7-macOS-x86_64.zip`
 - `SHA256SUMS.txt`
 
 Runner architecture determines actual compatibility. Apple Silicon and Intel

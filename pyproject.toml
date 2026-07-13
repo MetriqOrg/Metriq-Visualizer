@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "metriq-visualizer"
-version = "1.12.6"
+version = "1.12.7"
 description = "Local multidimensional media and data visualizer for creators, educators, and light scientific work"
 readme = "README.md"
 requires-python = ">=3.10"

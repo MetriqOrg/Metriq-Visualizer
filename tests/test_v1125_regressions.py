@@ -459,6 +459,7 @@ class LiveInputRegressionTests(unittest.TestCase):
             self.assertEqual(payload["CFBundleShortVersionString"], "1.12.5")
             self.assertEqual(payload["CFBundleIdentifier"], "org.metriq.visualizer")
 
+    @unittest.skipUnless(sys.platform == "darwin", "macOS-only code-signing command")
     def test_macos_bundle_is_ad_hoc_signed_after_metadata_changes(self) -> None:
         runner = MagicMock(return_value=SimpleNamespace(returncode=0, stderr=""))
         sign_macos_bundle(Path("/tmp/Metriq Visualizer.app"), runner=runner)
