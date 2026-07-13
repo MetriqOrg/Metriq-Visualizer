@@ -97,6 +97,48 @@ def _qcolor(rgba: np.ndarray | tuple[float, ...], *, alpha_scale: float = 1.0) -
     )
 
 
+def media_path_segments(
+    points: np.ndarray,
+    rgba: np.ndarray,
+    *,
+    line_width: float,
+    smooth: bool,
+    detail: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Build the responsive media path, interpolating every smooth trail.
+
+    ``compute_trail_state`` keeps separate segment buffers for the exact
+    Matplotlib renderer.  The realtime canvas instead derives its line from
+    the visible point trail so that selecting ``Smooth spline`` can never be
+    bypassed by a precomputed straight-segment buffer.
+    """
+
+    path_points = np.asarray(points, dtype=np.float64)
+    path_rgba = np.asarray(rgba, dtype=np.float64)
+    if path_points.ndim != 2 or path_points.shape[0] < 2 or path_rgba.shape[0] != path_points.shape[0]:
+        return (
+            np.empty((0, 2, 3), dtype=np.float64),
+            np.empty((0, 4), dtype=np.float64),
+            np.empty(0, dtype=np.float64),
+        )
+
+    widths = np.full(path_points.shape[0], max(0.1, float(line_width)), dtype=np.float64)
+    if smooth and path_points.shape[0] >= 4:
+        # Four samples per original edge makes the curvature unmistakable in
+        # the live canvas while remaining safely below its segment budget.
+        path_points, path_rgba, widths = interpolate_spline(
+            path_points,
+            path_rgba,
+            widths,
+            max(4, int(detail)),
+        )
+    return (
+        np.stack((path_points[:-1], path_points[1:]), axis=1),
+        0.5 * (path_rgba[:-1] + path_rgba[1:]),
+        0.5 * (widths[:-1] + widths[1:]),
+    )
+
+
 class Realtime3DCanvas(QWidget):
     """Cached QPainter projection for moving media and microphone trajectories."""
 
@@ -468,13 +510,8 @@ class Realtime3DCanvas(QWidget):
             return
         rgba = self._live_rgba
         sizes = self._live_sizes
-        detail = max(1, int(getattr(self.options, "curve_detail", 3))) if self.options is not None else 3
+        detail = max(1, int(getattr(self.options, "curve_detail", 4))) if self.options is not None else 4
         smooth = "smooth" in str(getattr(self.options, "path_curve_mode", "Smooth spline")).casefold()
-        path_points = values
-        path_rgba = rgba
-        widths = np.full(values.shape[0], float(getattr(self.options, "line_width", 1.35)), dtype=np.float64)
-        if smooth and values.shape[0] >= 4:
-            path_points, path_rgba, widths = interpolate_spline(values, rgba, widths, detail)
         mode = (
             str(getattr(self.options, "render_mode", "Points + line")).casefold()
             if self.options is not None
@@ -483,10 +520,14 @@ class Realtime3DCanvas(QWidget):
         show_line = bool(getattr(self.options, "connect_lines", True)) if self.options is not None else True
         show_line = show_line and "points only" not in mode
         show_points = "points" in mode
-        if show_line and path_points.shape[0] >= 2:
-            segments = np.stack((path_points[:-1], path_points[1:]), axis=1)
-            segment_rgba = 0.5 * (path_rgba[:-1] + path_rgba[1:])
-            segment_widths = 0.5 * (widths[:-1] + widths[1:])
+        if show_line:
+            segments, segment_rgba, segment_widths = media_path_segments(
+                values,
+                rgba,
+                line_width=float(getattr(self.options, "line_width", 1.35)),
+                smooth=smooth,
+                detail=detail,
+            )
             self._draw_segments(painter, segments, segment_rgba, segment_widths)
         if show_points:
             point_scale = float(getattr(self.options, "point_size_scale", 0.4)) if self.options is not None else 0.4
@@ -520,22 +561,20 @@ class Realtime3DCanvas(QWidget):
         mode = str(getattr(self.options, "render_mode", "Points + line")).casefold()
         show_points = "points" in mode or "tube" not in mode
         show_line = bool(getattr(self.options, "connect_lines", True)) and "points only" not in mode
-        if show_line and state.segments.size:
-            self._draw_segments(painter, state.segments, state.segment_rgba, state.segment_widths)
-        elif show_line and state.points.shape[0] >= 2:
-            # Tube mode receives a responsive center-line proxy while moving.
-            path_points = state.points
-            path_rgba = state.point_rgba
-            widths = np.full(path_points.shape[0], max(1.0, float(getattr(self.options, "line_width", 1.35)) * 2.0))
-            if "smooth" in str(getattr(self.options, "path_curve_mode", "Straight")).casefold():
-                path_points, path_rgba, widths = interpolate_spline(
-                    path_points,
-                    path_rgba,
-                    widths,
-                    max(1, int(getattr(self.options, "curve_detail", 4))),
-                )
-            segments = np.stack((path_points[:-1], path_points[1:]), axis=1)
-            self._draw_segments(painter, segments, 0.5 * (path_rgba[:-1] + path_rgba[1:]), widths[:-1])
+        if show_line:
+            # Do not consume ``state.segments`` here.  Its purpose is to
+            # support the exact renderer and may describe a simplified trail.
+            # The live canvas always rebuilds a spline from the points it is
+            # displaying, so the Smooth spline control visibly changes media
+            # playback as well as microphone input.
+            segments, segment_rgba, segment_widths = media_path_segments(
+                state.points,
+                state.point_rgba,
+                line_width=max(1.0, float(getattr(self.options, "line_width", 1.35)) * 2.0),
+                smooth="smooth" in str(getattr(self.options, "path_curve_mode", "Straight")).casefold(),
+                detail=max(4, int(getattr(self.options, "curve_detail", 4))),
+            )
+            self._draw_segments(painter, segments, segment_rgba, segment_widths)
         if state.comet_segments.size:
             self._draw_segments(
                 painter,

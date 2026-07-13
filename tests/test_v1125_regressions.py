@@ -23,6 +23,7 @@ from PySide6.QtWidgets import QApplication, QGroupBox  # noqa: E402
 _build_helpers = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'build' / 'build_pyinstaller.py'))
 MICROPHONE_USAGE = _build_helpers['MICROPHONE_USAGE']
 patch_macos_bundle_metadata = _build_helpers['patch_macos_bundle_metadata']
+sign_macos_bundle = _build_helpers['sign_macos_bundle']
 from metriq_visualizer_3d import (  # noqa: E402
     Interactive3DViewport,
     Matplotlib3DFrameRenderer,
@@ -38,7 +39,12 @@ from metriq_visualizer_core import (  # noqa: E402
 )
 from metriq_visualizer_live import LiveAudioEngine, LiveInputPanel  # noqa: E402
 from metriq_visualizer_panels import AnalysisDockWidget  # noqa: E402
-from metriq_visualizer_realtime import Realtime3DCanvas, advance_azimuth, camera_after_drag  # noqa: E402
+from metriq_visualizer_realtime import (  # noqa: E402
+    Realtime3DCanvas,
+    advance_azimuth,
+    camera_after_drag,
+    media_path_segments,
+)
 from metriq_visualizer_render import ExportOptions  # noqa: E402
 
 
@@ -249,6 +255,21 @@ class CameraAndMotionRegressionTests(unittest.TestCase):
         self.assertGreater(float(smooth_state.head_flash_rgba[3]), 0.0)
         self.assertEqual(straight_state.comet_segments.shape[0], 0)
 
+    def test_live_media_path_always_interpolates_the_visible_smooth_trail(self) -> None:
+        points = np.asarray(
+            ((0.0, 0.0, 0.0), (1.0, 2.0, 0.0), (2.0, -1.0, 0.0), (3.0, 1.0, 0.0)),
+            dtype=np.float64,
+        )
+        rgba = np.tile(np.asarray((0.2, 0.8, 1.0, 0.9)), (points.shape[0], 1))
+        straight, _, _ = media_path_segments(points, rgba, line_width=1.5, smooth=False, detail=1)
+        smooth, _, _ = media_path_segments(points, rgba, line_width=1.5, smooth=True, detail=1)
+
+        # Even a low requested detail is raised to a visibly curved spline in
+        # the realtime canvas; it must not fall back to point-to-point lines.
+        self.assertEqual(straight.shape[0], points.shape[0] - 1)
+        self.assertGreaterEqual(smooth.shape[0], (points.shape[0] - 1) * 4)
+        self.assertFalse(np.allclose(smooth[: straight.shape[0]], straight))
+
 
 class AnalysisControlRegressionTests(unittest.TestCase):
     def test_audio_settings_change_real_extraction_and_cache_identity(self) -> None:
@@ -433,6 +454,16 @@ class LiveInputRegressionTests(unittest.TestCase):
             self.assertEqual(payload["NSMicrophoneUsageDescription"], MICROPHONE_USAGE)
             self.assertEqual(payload["CFBundleShortVersionString"], "1.12.5")
             self.assertEqual(payload["CFBundleIdentifier"], "org.metriq.visualizer")
+
+    def test_macos_bundle_is_ad_hoc_signed_after_metadata_changes(self) -> None:
+        runner = MagicMock(return_value=SimpleNamespace(returncode=0, stderr=""))
+        sign_macos_bundle(Path("/tmp/Metriq Visualizer.app"), runner=runner)
+        runner.assert_called_once_with(
+            ["/usr/bin/codesign", "--force", "--deep", "--sign", "-", "/tmp/Metriq Visualizer.app"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
 
 if __name__ == "__main__":
