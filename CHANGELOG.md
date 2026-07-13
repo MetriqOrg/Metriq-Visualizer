@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.12.8 — Windows release validation
+
+### Fixed
+
+- Source-merge reports now use portable POSIX paths on every operating system, so Windows validation preserves custom preset actions correctly.
+
 ## 1.12.7 — cross-platform release hardening
 
 ### Fixed
