@@ -45,8 +45,14 @@ def advance_azimuth(azimuth: float, rotation_speed: float, elapsed_seconds: floa
     return (value + 180.0) % 360.0 - 180.0
 
 
-def _grid_segments(divisions: int = 4) -> np.ndarray:
-    """Return a restrained three-plane unit-cube grid."""
+def _grid_segments(
+    x_plane: float = -1.0,
+    y_plane: float = -1.0,
+    z_plane: float = -1.0,
+    *,
+    divisions: int = 4,
+) -> np.ndarray:
+    """Return three unit-cube grid planes placed at the supplied back edges."""
 
     values = np.linspace(-1.0, 1.0, max(2, int(divisions)) + 1)
     segments: list[tuple[tuple[float, float, float], tuple[float, float, float]]] = []
@@ -54,26 +60,28 @@ def _grid_segments(divisions: int = 4) -> np.ndarray:
         # XY floor, XZ rear plane, and YZ side plane.
         segments.extend(
             [
-                ((-1.0, value, -1.0), (1.0, value, -1.0)),
-                ((value, -1.0, -1.0), (value, 1.0, -1.0)),
-                ((-1.0, -1.0, value), (1.0, -1.0, value)),
-                ((value, -1.0, -1.0), (value, -1.0, 1.0)),
-                ((-1.0, -1.0, value), (-1.0, 1.0, value)),
-                ((-1.0, value, -1.0), (-1.0, value, 1.0)),
+                ((-1.0, value, z_plane), (1.0, value, z_plane)),
+                ((value, -1.0, z_plane), (value, 1.0, z_plane)),
+                ((-1.0, y_plane, value), (1.0, y_plane, value)),
+                ((value, y_plane, -1.0), (value, y_plane, 1.0)),
+                ((x_plane, -1.0, value), (x_plane, 1.0, value)),
+                ((x_plane, value, -1.0), (x_plane, value, 1.0)),
             ]
         )
     return np.asarray(segments, dtype=np.float64)
 
 
-_GRID_SEGMENTS = _grid_segments()
-_AXIS_SEGMENTS = np.asarray(
-    [
-        ((-1.0, -1.0, -1.0), (1.0, -1.0, -1.0)),
-        ((-1.0, -1.0, -1.0), (-1.0, 1.0, -1.0)),
-        ((-1.0, -1.0, -1.0), (-1.0, -1.0, 1.0)),
-    ],
-    dtype=np.float64,
-)
+def _axis_segments(x_plane: float, y_plane: float, z_plane: float) -> np.ndarray:
+    """Return axes anchored to the camera-facing back corner."""
+
+    return np.asarray(
+        [
+            ((-1.0, y_plane, z_plane), (1.0, y_plane, z_plane)),
+            ((x_plane, -1.0, z_plane), (x_plane, 1.0, z_plane)),
+            ((x_plane, y_plane, -1.0), (x_plane, y_plane, 1.0)),
+        ],
+        dtype=np.float64,
+    )
 
 
 def _qcolor(rgba: np.ndarray | tuple[float, ...], *, alpha_scale: float = 1.0) -> QColor:
@@ -119,6 +127,9 @@ class Realtime3DCanvas(QWidget):
         self._live_rgba = np.empty((0, 4), dtype=np.float64)
         self._live_sizes = np.empty(0, dtype=np.float64)
         self._live_active = False
+        self._grid_back_planes = (-1.0, -1.0, -1.0)
+        self._grid_segments = _grid_segments(*self._grid_back_planes)
+        self._axis_segments = _axis_segments(*self._grid_back_planes)
 
     # -------------------------------------------------------------- scene data
     def set_theme(self, theme_name: str) -> None:
@@ -304,6 +315,23 @@ class Realtime3DCanvas(QWidget):
     def project(self, points: np.ndarray) -> np.ndarray:
         return self.project_normalized(self.normalize_points(points))
 
+    def _place_grid_behind_scene(self) -> tuple[float, float, float]:
+        """Keep the three coordinate planes on the camera's far cube edges.
+
+        A fixed ``x = -1`` or ``y = -1`` plane can become foreground geometry
+        after orbiting around the scene.  Selecting each plane's signed edge
+        from the camera depth vector keeps XY, XZ, and YZ behind the mapped
+        visualizer while preserving their expected coordinate orientation.
+        """
+
+        depth_axis = self._rotation_matrix(self.elevation, self.azimuth)[:, 2]
+        planes = tuple(-1.0 if component >= 0.0 else 1.0 for component in depth_axis)
+        if planes != self._grid_back_planes:
+            self._grid_back_planes = planes
+            self._grid_segments = _grid_segments(*planes)
+            self._axis_segments = _axis_segments(*planes)
+        return planes
+
     # ---------------------------------------------------------------- painting
     def _draw_segments(
         self,
@@ -407,15 +435,16 @@ class Realtime3DCanvas(QWidget):
         if self.options is not None and not bool(getattr(self.options, "show_axes", True)):
             return
         palette = scene_palette(self.theme_name)
+        self._place_grid_behind_scene()
         show_grid = self.options is None or bool(getattr(self.options, "show_grid", True))
         if show_grid:
-            grid = self.project_normalized(_GRID_SEGMENTS.reshape(-1, 3)).reshape(-1, 2, 3)
+            grid = self.project_normalized(self._grid_segments.reshape(-1, 3)).reshape(-1, 2, 3)
             pen = QPen(_qcolor(palette.grid))
             pen.setWidthF(0.7)
             painter.setPen(pen)
             for segment in grid:
                 painter.drawLine(QPointF(segment[0, 0], segment[0, 1]), QPointF(segment[1, 0], segment[1, 1]))
-        axes = self.project_normalized(_AXIS_SEGMENTS.reshape(-1, 3)).reshape(-1, 2, 3)
+        axes = self.project_normalized(self._axis_segments.reshape(-1, 3)).reshape(-1, 2, 3)
         axis_pen = QPen(QColor(palette.muted_text))
         axis_pen.setWidthF(1.15)
         painter.setPen(axis_pen)

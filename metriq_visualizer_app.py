@@ -1655,7 +1655,14 @@ class MainWindow(QMainWindow):
             self.analysis_dock.set_time(self.current_time)
         self._schedule_preview()
 
-    def _seek_seconds(self, seconds: float, *, sync_media: bool = True, schedule_preview: bool = True) -> None:
+    def _seek_seconds(
+        self,
+        seconds: float,
+        *,
+        sync_media: bool = True,
+        schedule_preview: bool = True,
+        draw_analysis_cursor: bool = True,
+    ) -> None:
         if self.analysis is None:
             self.pending_seek = seconds
             return
@@ -1672,7 +1679,7 @@ class MainWindow(QMainWindow):
             self.play_clock.restart()
         self._update_time_label()
         if hasattr(self, "analysis_dock"):
-            self.analysis_dock.set_time(self.current_time)
+            self.analysis_dock.set_time(self.current_time, draw=draw_analysis_cursor)
         if schedule_preview:
             self._schedule_preview()
 
@@ -1693,6 +1700,7 @@ class MainWindow(QMainWindow):
         self.adaptive_preview.reset(int(self.live_points_spin.value()), int(self.live_fps_spin.value()))
         self._last_preview_draw_ms = 0.0
         self._playing = True
+        self.viewport.set_playback_active(True)
         self.preview_session_dirty = True
         self._using_media_clock = bool(self._media_source_path is not None and not self._media_failed)
         self.play_clock.restart()
@@ -1711,6 +1719,8 @@ class MainWindow(QMainWindow):
     def stop_playback(self) -> None:
         was_playing = self._playing
         self._playing = False
+        if hasattr(self, "viewport"):
+            self.viewport.set_playback_active(False)
         self.preview_session_dirty = True
         self.play_timer.stop()
         self.playback_render_timer.stop()
@@ -1787,7 +1797,17 @@ class MainWindow(QMainWindow):
                 self._seek_seconds(target, sync_media=False, schedule_preview=False)
                 self.stop_playback()
                 return
-        self._seek_seconds(target, sync_media=False, schedule_preview=False)
+        # The playback clock fires every 25 ms.  It must only update the
+        # analysis cursor state; the independently throttled preview renderer
+        # schedules the expensive Matplotlib cursor paint at a safe cadence.
+        # Otherwise a visible spectrogram/chromagram monopolizes the UI thread
+        # and starves the realtime 3D camera timer.
+        self._seek_seconds(
+            target,
+            sync_media=False,
+            schedule_preview=False,
+            draw_analysis_cursor=False,
+        )
 
     @Slot()
     def _render_playback_frame(self) -> None:
@@ -1795,6 +1815,10 @@ class MainWindow(QMainWindow):
             return
         if self.adaptive_preview_check.isChecked() and self.viewport.draw_pending():
             return
+        # Playback owns autorotation so a busy analysis panel cannot starve a
+        # separate camera timer.  Exactly one camera update is applied for
+        # each frame the realtime viewport is about to display.
+        self.viewport.advance_autorotate()
         self._render_preview()
 
     def _configure_media_source(self) -> None:
