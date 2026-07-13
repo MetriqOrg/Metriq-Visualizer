@@ -5,7 +5,7 @@
   "generated_at": "2026-07-13T14:56:13+00:00",
   "self_included": false,
   "file_count": 91,
-  "total_bytes": 2762768,
+  "total_bytes": 2762991,
   "files": [
     {
       "path": ".github/workflows/build-release.yml",
@@ -357,9 +357,9 @@
     },
     {
       "path": "metriq_visualizer_performance.py",
-      "bytes": 8807,
+      "bytes": 9030,
       "mode": "0644",
-      "sha256": "d0518f2e82fc4690a53b5f2cb064f40040ffedf43007d24be6e40ae7a9cf4005"
+      "sha256": "2836ffc5d0a25b299172c87fa908aca6f74a1829ed92bed39f71ea6175e9f667"
     },
     {
       "path": "metriq_visualizer_preset_files.py",
@@ -509,7 +509,7 @@
       "path": "tests/test_performance.py",
       "bytes": 4077,
       "mode": "0644",
-      "sha256": "f0a44719c85630b5534cd0b6f64f45a02ab6213b9df957223c798c328e6204d7"
+      "sha256": "7bd40dce2f3eb9d89f048fede082cb75fe3787ba4669f5b5d2490116e3422526"
     },
     {
       "path": "tests/test_persistence.py",
