@@ -208,6 +208,21 @@ class CameraAndMotionRegressionTests(unittest.TestCase):
         canvas._draw_grid(grid_hidden_painter)
         self.assertEqual(grid_hidden_painter.drawLine.call_count, 3)
 
+    def test_realtime_grid_planes_follow_the_camera_to_stay_behind_data(self) -> None:
+        canvas = Realtime3DCanvas()
+        canvas.set_camera(24.0, 35.0)
+        initial_planes = canvas._place_grid_behind_scene()
+        initial_depth = canvas._rotation_matrix(canvas.elevation, canvas.azimuth)[:, 2]
+        for plane, depth_component in zip(initial_planes, initial_depth, strict=True):
+            self.assertLessEqual(plane * depth_component, 1e-12)
+
+        canvas.set_camera(-24.0, -145.0)
+        rotated_planes = canvas._place_grid_behind_scene()
+        rotated_depth = canvas._rotation_matrix(canvas.elevation, canvas.azimuth)[:, 2]
+        for plane, depth_component in zip(rotated_planes, rotated_depth, strict=True):
+            self.assertLessEqual(plane * depth_component, 1e-12)
+        self.assertNotEqual(initial_planes, rotated_planes)
+
     def test_spline_and_motion_accents_change_the_render_state(self) -> None:
         temporary, analysis, geometry = self._fixture()
         self.addCleanup(temporary.cleanup)

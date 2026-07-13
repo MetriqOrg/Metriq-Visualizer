@@ -7,6 +7,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 from scipy.io import wavfile
@@ -248,6 +249,42 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertGreater(window.current_time, start_time + 0.15)
         self.assertGreaterEqual(render_count, 2)
         self.assertEqual(window.play_button.text(), "Play")
+        window.close()
+        self.app.processEvents()
+
+    def test_playback_keeps_autorotation_live_without_redrawing_analysis_at_clock_rate(self) -> None:
+        source = Path(self.temp.name) / "autorotate-playback-source.csv"
+        source.write_text(
+            "time,a,b,c\n"
+            + "\n".join(
+                f"{index / 30:.6f},{np.sin(index / 8):.6f},{np.cos(index / 11):.6f},{index % 17}"
+                for index in range(180)
+            ),
+            encoding="utf-8",
+        )
+        window = MainWindow()
+        window._start_analysis(source)
+        self._wait_for_analysis(window)
+        window.autorotate_check.setChecked(True)
+        window.rotation_speed_spin.setValue(120.0)
+        window._render_preview()
+        self.app.processEvents()
+        self.assertTrue(window.viewport.autorotate_timer.isActive())
+
+        with patch.object(window.analysis_dock, "set_time", wraps=window.analysis_dock.set_time) as set_time:
+            start_azimuth = window.viewport.camera()[1]
+            window.toggle_playback()
+            deadline = time.monotonic() + 0.22
+            while time.monotonic() < deadline:
+                self.app.processEvents()
+                time.sleep(0.005)
+            window.stop_playback()
+            self.app.processEvents()
+
+        self.assertTrue(window.autorotate_check.isChecked())
+        self.assertTrue(window.viewport.autorotate_timer.isActive())
+        self.assertGreater(abs(window.viewport.camera()[1] - start_azimuth), 5.0)
+        self.assertTrue(any(call.kwargs.get("draw") is False for call in set_time.call_args_list))
         window.close()
         self.app.processEvents()
 

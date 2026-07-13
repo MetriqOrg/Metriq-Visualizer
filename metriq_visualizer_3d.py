@@ -1083,6 +1083,7 @@ class Interactive3DViewport(QWidget):
         self._live_point_budget = 2200
         self._motion_mode = False
         self._live_mode = False
+        self._playback_active = False
         self._realtime_drag_active = False
         self._exact_drag_origin: tuple[float, float] | None = None
         self._exact_drag_camera = (24.0, 35.0)
@@ -1182,6 +1183,7 @@ class Interactive3DViewport(QWidget):
             self.options is not None
             and getattr(self.options, "autorotate", False)
             and (self.scene is not None or self.realtime.live_active)
+            and not self._playback_active
             and not self._realtime_drag_active
             and self._exact_drag_origin is None
         )
@@ -1193,15 +1195,42 @@ class Interactive3DViewport(QWidget):
             self.autorotate_timer.stop()
 
     def _autorotate_tick(self) -> None:
-        if self.options is None or not bool(getattr(self.options, "autorotate", False)):
+        if self._playback_active or self.options is None or not bool(getattr(self.options, "autorotate", False)):
             self._sync_autorotate_timer()
             return
+        self.advance_autorotate()
+
+    def set_playback_active(self, enabled: bool) -> None:
+        """Switch camera motion to the frame-delivery loop during playback."""
+
+        value = bool(enabled)
+        if value == self._playback_active:
+            return
+        self._playback_active = value
+        if value:
+            # The render loop calls ``advance_autorotate`` once per displayed
+            # frame.  Restarting the same elapsed-time clock preserves smooth
+            # wall-clock motion without a second timer contending for the UI.
+            self.autorotate_clock.start()
+            self._autorotate_emit_elapsed = 0.0
+        self._sync_autorotate_timer()
+
+    def advance_autorotate(self) -> bool:
+        """Advance the interactive camera once and report whether it moved."""
+
+        if (
+            self.options is None
+            or not bool(getattr(self.options, "autorotate", False))
+            or self._realtime_drag_active
+            or self._exact_drag_origin is not None
+        ):
+            return False
         if not self.autorotate_clock.isValid():
             self.autorotate_clock.start()
-            return
+            return False
         elapsed = max(0.0, self.autorotate_clock.restart() / 1000.0)
         if elapsed <= 0.0:
-            return
+            return False
         from metriq_visualizer_realtime import advance_azimuth
 
         elevation, azimuth, zoom = self.camera()
@@ -1211,6 +1240,7 @@ class Interactive3DViewport(QWidget):
         if self._autorotate_emit_elapsed >= 0.10:
             self._autorotate_emit_elapsed = 0.0
             self.cameraChanged.emit(elevation, azimuth, zoom)
+        return True
 
     def set_motion_mode(self, enabled: bool) -> None:
         value = bool(enabled)
@@ -1290,6 +1320,7 @@ class Interactive3DViewport(QWidget):
         self.figure.clear()
         self.realtime.clear_scene()
         self._live_mode = False
+        self._playback_active = False
         self.placeholder.setText(
             message or "OPEN LOCAL MEDIA OR TABLE DATA\n\nThe three-dimensional field will appear here."
         )
