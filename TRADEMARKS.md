@@ -1,12 +1,14 @@
-# Metriq branding and intellectual property notice
+# Metriq trademark and brand notice
 
-Metriq, Metriq Visualizer, the Metriq name, Metriq logos, symbols, marks, copyrighted brand materials, and other Metriq Foundation, Inc. brand assets and intellectual property are reserved.
+The source code is licensed under the Mozilla Public License 2.0. That license
+does not grant permission to use the names **Metriq**, **Metriq Visualizer**,
+**Metriq Dynamics**, associated logos, service marks, trade dress, or other
+Metriq Foundation, Inc. brand assets in a manner that suggests affiliation,
+sponsorship, endorsement, or an official build.
 
-Using this software, downloading it, modifying it, forking it, redistributing it, or building derivative works from it does **not** grant permission to:
-- use the Metriq name, trademarks, service marks, logos, symbols, trade dress, copyrighted brand materials, or other Metriq Foundation, Inc. intellectual property;
-- suggest affiliation with, sponsorship by, or endorsement from Metriq Foundation, Inc.;
-- keep Metriq branding on forks, modified versions, or redistributed builds unless separately authorized in writing.
+Unmodified official releases may retain the included attribution and artwork.
+Forks and materially modified distributions should use a distinct product name
+and should replace Metriq logos unless separately authorized in writing.
 
-Forks, modified versions, and redistributed builds should remove or replace Metriq brand assets and copyrighted brand materials unless you have separate written permission from Metriq Foundation, Inc.
-
-The Apache-2.0 license in this package applies to the source code and other materials that are expressly licensed under Apache-2.0. It does not grant trademark rights or other brand-use rights.
+Nothing in this notice limits nominative references needed to describe origin,
+compatibility, or changes, where permitted by applicable law.

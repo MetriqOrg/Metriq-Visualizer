@@ -1,0 +1,15 @@
+{
+  "elapsed_seconds": 0.9662115529999937,
+  "frames": 30,
+  "frames_per_second": 31.049100900163005,
+  "generated_at": "2026-07-12T03:13:37.629877+00:00",
+  "milliseconds_per_frame": 32.20705176666646,
+  "note": "Single CPU-render validation run; performance varies by hardware and composition.",
+  "resolution": [
+    960,
+    540
+  ],
+  "schema": "metriq.validation.render-benchmark",
+  "schema_version": 1,
+  "source_description": "synthetic 720-row table"
+}

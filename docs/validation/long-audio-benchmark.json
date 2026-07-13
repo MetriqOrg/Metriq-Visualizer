@@ -1,0 +1,15 @@
+{
+  "analysis_engine": "numpy-scipy-bounded-v2",
+  "duration": 120.0,
+  "elapsed_seconds": 0.7591600440000548,
+  "features": 53,
+  "frames": 4093,
+  "generated_at": "2026-07-12T03:13:33.900549+00:00",
+  "hop_length": 646,
+  "max_analysis_frames": 4096,
+  "maximum_resident_kib": 562316,
+  "note": "Single validation run; timing and memory vary by hardware and process state.",
+  "schema": "metriq.validation.long-audio-benchmark",
+  "schema_version": 2,
+  "source_description": "synthetic 120-second mono WAV"
+}

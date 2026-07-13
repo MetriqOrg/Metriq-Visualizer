@@ -1,11 +1,10 @@
 Metriq Visualizer
-
 Copyright (c) 2026 Metriq Foundation, Inc.
-This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
-If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+This distribution includes open-source software made available under the
+Mozilla Public License 2.0 and third-party dependencies under their respective
+licenses. See LICENSE and the installed Python packages for the corresponding
+license texts.
 
-No right to use the Metriq name, trademarks, service marks, logos, symbols, trade dress, copyrighted brand materials, or other Metriq Foundation, Inc. intellectual property is granted except as separately authorized in writing.
-
-Metriq Visualizer was originally developed by Metriq Foundation, Inc.
-Forks and redistributions must retain applicable copyright and license notices.
+Metriq names, logos, marks, and visual identity assets are not licensed under
+the MPL. See TRADEMARKS.md and assets/ASSET_NOTICE.md.

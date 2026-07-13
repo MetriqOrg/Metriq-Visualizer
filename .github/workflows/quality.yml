@@ -1,0 +1,49 @@
+name: Visualizer quality
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 libpulse0 libportaudio2
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install ruff
+      - name: Static analysis
+        run: python -m ruff check .
+      - name: Compile
+        run: python -m compileall -q .
+      - name: Verify source
+        run: python tools/verify_source.py --imports
+      - name: Unit and integration tests
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Offscreen application smoke
+        run: |
+          python - <<'PY'
+          from PySide6.QtWidgets import QApplication
+          import metriq_visualizer_app as app_module
+
+          app = QApplication.instance() or QApplication([])
+          window = app_module.MainWindow()
+          app.processEvents()
+          assert app_module.APP_VERSION == "1.12.5"
+          assert window.windowTitle() == "Metriq Visualizer v1.12.5"
+          window.close()
+          app.processEvents()
+          print("offscreen application smoke: ok")
+          PY

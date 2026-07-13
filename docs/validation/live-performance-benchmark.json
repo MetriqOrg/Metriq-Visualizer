@@ -1,0 +1,67 @@
+{
+  "exact_scene_boundary": "Paused inspection and export continue to use the exact Matplotlib 3D renderer; this benchmark intentionally measures only the interactive moving path.",
+  "generated_at": "2026-07-13T04:41:26.012400+00:00",
+  "note": "Offscreen Linux CPU raster measurements for the v1.12.5 moving-preview path. They are not macOS, Retina, CoreAudio, or physical-display benchmarks; host results vary.",
+  "profiles": {
+    "Balanced": {
+      "configured_points": 1200,
+      "curve_detail_cap": 4,
+      "effective_path_curve_mode": "Smooth spline",
+      "effective_render_mode": "Points + line",
+      "maximum_paint_ms": 92.60635500004355,
+      "median_paint_ms": 86.90701149976121,
+      "minimum_paint_ms": 84.77016999995612,
+      "p95_paint_ms": 91.31663580003533,
+      "pixel_ratio_cap": 1.25,
+      "sample_count": 12,
+      "target_fps": 12
+    },
+    "Fast preview": {
+      "configured_points": 650,
+      "curve_detail_cap": 2,
+      "effective_path_curve_mode": "Smooth spline",
+      "effective_render_mode": "Points + line",
+      "maximum_paint_ms": 44.62345199999618,
+      "median_paint_ms": 41.33489149990055,
+      "minimum_paint_ms": 39.266086999759864,
+      "p95_paint_ms": 43.44132544990771,
+      "pixel_ratio_cap": 1.0,
+      "sample_count": 12,
+      "target_fps": 15
+    },
+    "Full live simulation": {
+      "configured_points": 6000,
+      "curve_detail_cap": 24,
+      "effective_path_curve_mode": "Smooth spline",
+      "effective_render_mode": "Tube + points",
+      "maximum_paint_ms": 258.68896499969196,
+      "median_paint_ms": 79.56660650006597,
+      "minimum_paint_ms": 72.60210200001893,
+      "p95_paint_ms": 190.02017854995748,
+      "pixel_ratio_cap": null,
+      "sample_count": 12,
+      "target_fps": 5
+    },
+    "High quality": {
+      "configured_points": 1800,
+      "curve_detail_cap": 8,
+      "effective_path_curve_mode": "Smooth spline",
+      "effective_render_mode": "Points + line",
+      "maximum_paint_ms": 317.86720799982504,
+      "median_paint_ms": 98.14955950014337,
+      "minimum_paint_ms": 93.9397690003716,
+      "p95_paint_ms": 199.5477600498587,
+      "pixel_ratio_cap": 1.5,
+      "sample_count": 12,
+      "target_fps": 8
+    }
+  },
+  "renderer": "Qt QPainter realtime projection",
+  "resolution": [
+    960,
+    540
+  ],
+  "schema": "metriq.validation.live-performance-benchmark",
+  "schema_version": 2,
+  "source_description": "synthetic 4,096-row XYZ table with moving playback head"
+}

@@ -1,0 +1,557 @@
+{
+  "schema": "metriq.complete-source-manifest",
+  "schema_version": 1,
+  "version": "1.12.5",
+  "generated_at": "2026-07-13T05:17:55+00:00",
+  "self_included": false,
+  "file_count": 91,
+  "total_bytes": 2752518,
+  "files": [
+    {
+      "path": ".github/workflows/build-release.yml",
+      "bytes": 2524,
+      "mode": "0644",
+      "sha256": "796cc17b1f7dafff7e8dde0a7e2cebba99e6298f34c3a791a42993b8e792aa7b"
+    },
+    {
+      "path": ".github/workflows/quality.yml",
+      "bytes": 1558,
+      "mode": "0644",
+      "sha256": "067b98e06de1e1308d5b1608329a241dffed7f7eb09cd50f6ded795033e82ded"
+    },
+    {
+      "path": ".gitignore",
+      "bytes": 406,
+      "mode": "0644",
+      "sha256": "fbf60b482ed74dc00a103d673f708e86e66691a9d7c06850fc28d70baf490e10"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "bytes": 8469,
+      "mode": "0644",
+      "sha256": "19977593f69d5f917daab4ce5e061a3f01d2736011ffcb27b1026a060cc9c8ef"
+    },
+    {
+      "path": "CODEX_IMPORT.md",
+      "bytes": 2104,
+      "mode": "0644",
+      "sha256": "d57803eb0d2caf9afd84afd039f3311e060f0dbda1b8962b8923590d3bbe0777"
+    },
+    {
+      "path": "CODEX_PROMPT.txt",
+      "bytes": 1934,
+      "mode": "0644",
+      "sha256": "a6cd118d63dba627305c079085567462537ae9a454042b43f1a84c2f7386032d"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 16725,
+      "mode": "0644",
+      "sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5"
+    },
+    {
+      "path": "NOTICE",
+      "bytes": 441,
+      "mode": "0644",
+      "sha256": "4e56e13778490ed6713d9172d2c6fe89ef5a0d8521f0675173b8ff72612aa576"
+    },
+    {
+      "path": "README.md",
+      "bytes": 15522,
+      "mode": "0644",
+      "sha256": "92b8026a4da4f752182105f077687b4b553bd6db33dd6de9f6b977aa6b961fa5"
+    },
+    {
+      "path": "TRADEMARKS.md",
+      "bytes": 767,
+      "mode": "0644",
+      "sha256": "6048aeec6b33152d8ec0db5932e8a81fede4bdb4a681e032d1db160e95750fd6"
+    },
+    {
+      "path": "UPGRADE_1_12.md",
+      "bytes": 2358,
+      "mode": "0644",
+      "sha256": "40427d993d3bc4d078d4109b9b39ac73abcbed4dda85d21804dacd4d5cbe8f37"
+    },
+    {
+      "path": "UPGRADE_1_12_1.md",
+      "bytes": 3086,
+      "mode": "0644",
+      "sha256": "d17d3cef2936f7773fd3752a203499c2b458de15dc3348b97bac8691c4b4b51d"
+    },
+    {
+      "path": "UPGRADE_1_12_2.md",
+      "bytes": 2358,
+      "mode": "0644",
+      "sha256": "40427d993d3bc4d078d4109b9b39ac73abcbed4dda85d21804dacd4d5cbe8f37"
+    },
+    {
+      "path": "UPGRADE_1_12_3.md",
+      "bytes": 4456,
+      "mode": "0644",
+      "sha256": "cb63d155d33677e8720ad281648f580eefc93333b49669bf184ae8b528f8001b"
+    },
+    {
+      "path": "UPGRADE_1_12_5.md",
+      "bytes": 2860,
+      "mode": "0644",
+      "sha256": "860c79dcd33909b37aa902eca864f989247fb8413af20f4ba8e075b15d5b16f9"
+    },
+    {
+      "path": "VERSION.txt",
+      "bytes": 7,
+      "mode": "0644",
+      "sha256": "2905637229644cff6d7d46e314cb460b05bc7e7c31a62dba974f5db1ad9c38c6"
+    },
+    {
+      "path": "assets/ASSET_NOTICE.md",
+      "bytes": 433,
+      "mode": "0644",
+      "sha256": "0be7f21c750331dd7f9b3f39c22bfebbf677a40994818d3dc258d5a361b2e510"
+    },
+    {
+      "path": "assets/Sample1.gif",
+      "bytes": 608769,
+      "mode": "0644",
+      "sha256": "171fac1f42435db5b86f08eafea1859f8ce82135dde1c975121441742e631c6b"
+    },
+    {
+      "path": "assets/metriq_logo_color.png",
+      "bytes": 303081,
+      "mode": "0644",
+      "sha256": "72ea82a1205baeb75cf4900f03b530bb474103d34d9de089caafc868427b3aca"
+    },
+    {
+      "path": "assets/metriq_mark_color.png",
+      "bytes": 68608,
+      "mode": "0644",
+      "sha256": "fa4f68a20b6f9a73be2e6f91a5635e54573c2cce1406d0b7e083b07c6ec7c9b4"
+    },
+    {
+      "path": "build/build_pyinstaller.py",
+      "bytes": 3352,
+      "mode": "0755",
+      "sha256": "c4cbb15284c37909cba8431972d4fccb884bba502aa666b011c67691d4e2531f"
+    },
+    {
+      "path": "docs/ARCHITECTURE_1_12.md",
+      "bytes": 8681,
+      "mode": "0644",
+      "sha256": "b58b75c7bd09c44061626447769f30fa6a1144315af10957b97f6cf7d19930a3"
+    },
+    {
+      "path": "docs/CACHE_AND_DATA_EXPORT.md",
+      "bytes": 2525,
+      "mode": "0644",
+      "sha256": "2fa0b33dfc71c8f70236b1fcdd15d15c55e88a2d53eeb7c861a8c392b34970da"
+    },
+    {
+      "path": "docs/EXPORT_STUDIO.md",
+      "bytes": 4246,
+      "mode": "0644",
+      "sha256": "6f9b401aa3fdd5e1204a0fdf59bc847a4bf391f546ffefcd47576aa89783c9e8"
+    },
+    {
+      "path": "docs/LIVE_INPUT.md",
+      "bytes": 2651,
+      "mode": "0644",
+      "sha256": "e5928c7c2384752de7a23170f8e7be3836ec461d53ec1e607206fc9fb0c46562"
+    },
+    {
+      "path": "docs/MACOS.md",
+      "bytes": 1798,
+      "mode": "0644",
+      "sha256": "4c360a464559f08238a98db720edcc5fc8734c5d686b3656f553b5474da489ca"
+    },
+    {
+      "path": "docs/PERFORMANCE.md",
+      "bytes": 3343,
+      "mode": "0644",
+      "sha256": "a37b43816c4c2c2391093f33436f2b158d9e6497c337214fda6597bb618239cf"
+    },
+    {
+      "path": "docs/RELEASE_BUILDS.md",
+      "bytes": 1956,
+      "mode": "0644",
+      "sha256": "732c57e2a2b4ea52b2b52b7c4997e9f19f104e7de66b0e04a55a1dd763c784d8"
+    },
+    {
+      "path": "docs/ROADMAP.md",
+      "bytes": 1373,
+      "mode": "0644",
+      "sha256": "0b8e09cb1e166350086b0743fc4e841e598d54570caa4fc9147f4c22fa111eed"
+    },
+    {
+      "path": "docs/VALIDATION_1_12.md",
+      "bytes": 5357,
+      "mode": "0644",
+      "sha256": "bf73a4010d5b0a53525ff009a02396c1b453a2de694d32e00e1b91ef74a44edb"
+    },
+    {
+      "path": "docs/WINDOWS.md",
+      "bytes": 1113,
+      "mode": "0644",
+      "sha256": "c4196d35e3a66a875c3b32ea96517f3eddb2f6de53cdbe3dda31239ab3c5bf73"
+    },
+    {
+      "path": "docs/images/export-studio-3d.png",
+      "bytes": 183577,
+      "mode": "0644",
+      "sha256": "74bb081b0eb00d732f790ebf4200c30a5f7c20b8315c441cca78e8e7b6acfeb1"
+    },
+    {
+      "path": "docs/images/export-studio.png",
+      "bytes": 183577,
+      "mode": "0644",
+      "sha256": "74bb081b0eb00d732f790ebf4200c30a5f7c20b8315c441cca78e8e7b6acfeb1"
+    },
+    {
+      "path": "docs/images/main-workspace-3d.png",
+      "bytes": 207608,
+      "mode": "0644",
+      "sha256": "75e8c031cf6ef985919560e83e9ac490740b26883dffb492916ee60561e9f9df"
+    },
+    {
+      "path": "docs/images/main-workspace-light-performance.png",
+      "bytes": 231933,
+      "mode": "0644",
+      "sha256": "6265118b5c15c9b9e24853c6654079a8f652ba8dfcabb68222cc01387164eef9"
+    },
+    {
+      "path": "docs/images/main-workspace-v1125.png",
+      "bytes": 198580,
+      "mode": "0644",
+      "sha256": "52fc0ee6ccb867de7ded82e36b57711157092e6228284d996cb95ade06d45b31"
+    },
+    {
+      "path": "docs/validation/cache-benchmark.json",
+      "bytes": 440,
+      "mode": "0644",
+      "sha256": "d74e623096e9e248b155e52c36470fc20a0a4b4801ad4ba5f587f49f52d7d971"
+    },
+    {
+      "path": "docs/validation/codec-smoke.json",
+      "bytes": 3338,
+      "mode": "0644",
+      "sha256": "e6353e009847ea191f5c64308c0ff8ce62b85b78cf5f86fdc66c0aed6359b0ee"
+    },
+    {
+      "path": "docs/validation/live-performance-benchmark.json",
+      "bytes": 2479,
+      "mode": "0644",
+      "sha256": "66fe91f6f9c0bf42f35dd0781c80323e24a3489da7aba7330bd12a142e481f6e"
+    },
+    {
+      "path": "docs/validation/long-audio-benchmark.json",
+      "bytes": 512,
+      "mode": "0644",
+      "sha256": "42dbe93bf8aa112440d54ff7573735cff4f690f17dfcc0b6c9f0531ae288f408"
+    },
+    {
+      "path": "docs/validation/render-benchmark.json",
+      "bytes": 463,
+      "mode": "0644",
+      "sha256": "1ed9880ec4a0596b880734e4f59a90fd1d8534435158a56ad87367db3b4d1568"
+    },
+    {
+      "path": "export_profiles/4K_Analysis_ProRes422.mvexport",
+      "bytes": 2839,
+      "mode": "0644",
+      "sha256": "8b34dbc72e199d790b5fdab7d76bdb116c558dea929db79e6ebcac82b1706113"
+    },
+    {
+      "path": "export_profiles/Full_HD_Balanced_H264.mvexport",
+      "bytes": 2831,
+      "mode": "0644",
+      "sha256": "494a9623d0f8f171e8ccae6e6168235a9864dae4f24f220c21feb3edf2647901"
+    },
+    {
+      "path": "export_profiles/README.md",
+      "bytes": 452,
+      "mode": "0644",
+      "sha256": "42a7ff0f1338ec3a6477d725dec3db40889780fe1446322a345978752d75d56b"
+    },
+    {
+      "path": "export_profiles/Square_Overlay_WebM.mvexport",
+      "bytes": 2817,
+      "mode": "0644",
+      "sha256": "ca41468c8d3c57f548e5dda7a47f13fe79f80eea481b5a9b6efba1e4a90559b0"
+    },
+    {
+      "path": "export_profiles/Vertical_1080_Creator_H264.mvexport",
+      "bytes": 2834,
+      "mode": "0644",
+      "sha256": "e7d1b49a5c04a93cc2bb5b3ebde95201cd3f382f06746163d07c1156d6c75ad2"
+    },
+    {
+      "path": "metriq_visualizer_3d.py",
+      "bytes": 62966,
+      "mode": "0644",
+      "sha256": "35f4f6a2d5576e53bf14d850224a3318dbbb6e412b08d95f6dc64a292b7a906a"
+    },
+    {
+      "path": "metriq_visualizer_app.py",
+      "bytes": 117010,
+      "mode": "0644",
+      "sha256": "e147dc5c54898aac5281a24d991e26b81d2dffdfaed891341e3a2b16a51a5fff"
+    },
+    {
+      "path": "metriq_visualizer_atomic.py",
+      "bytes": 1909,
+      "mode": "0644",
+      "sha256": "86369bc66daae5d424c85738ddd2e04a853a352ae03503c98389b2a652f476ca"
+    },
+    {
+      "path": "metriq_visualizer_cache.py",
+      "bytes": 11214,
+      "mode": "0644",
+      "sha256": "79ab2165c8c52271b64f72b94167fd90b9fece793e6d983a878ed3dee124d8ab"
+    },
+    {
+      "path": "metriq_visualizer_core.py",
+      "bytes": 60274,
+      "mode": "0644",
+      "sha256": "2f5f07d1b555d1ea2d5a5f74179a6b2c129a9d4eaa340ee66c5777b4c97f51a3"
+    },
+    {
+      "path": "metriq_visualizer_data_export.py",
+      "bytes": 4605,
+      "mode": "0644",
+      "sha256": "5efc85f059824a0ce56ad2fd1b7e9e00639212af22fb870f720462913199ebd5"
+    },
+    {
+      "path": "metriq_visualizer_export_pipeline.py",
+      "bytes": 29220,
+      "mode": "0644",
+      "sha256": "6ef36a791388551eba22cba620ea652123e61c0dd860a2d7eb019913c40ab9d0"
+    },
+    {
+      "path": "metriq_visualizer_export_presets.py",
+      "bytes": 3051,
+      "mode": "0644",
+      "sha256": "a472553cd307b367bf58fedb0c358cc78a0c199bc9fa2773e5d9f5a7867881ee"
+    },
+    {
+      "path": "metriq_visualizer_export_studio.py",
+      "bytes": 60193,
+      "mode": "0644",
+      "sha256": "51d935e0f17138c2d7862820f1a3bce1d0d53374d8dbfe30a2c91745a8957eae"
+    },
+    {
+      "path": "metriq_visualizer_layout.py",
+      "bytes": 9076,
+      "mode": "0644",
+      "sha256": "50123af3c7bcfcffb0dd5039abce131c29f849f2d1e1621f107382a553723bcf"
+    },
+    {
+      "path": "metriq_visualizer_live.py",
+      "bytes": 44900,
+      "mode": "0644",
+      "sha256": "8d97807bde524eaaa86001f9f1bd2279e6a685e531816b34f1403b26ccb268b8"
+    },
+    {
+      "path": "metriq_visualizer_panels.py",
+      "bytes": 14396,
+      "mode": "0644",
+      "sha256": "9061e548672dad365de1a1b2b3fb7031ff3c75dd71c9aa42461d1c6369158a97"
+    },
+    {
+      "path": "metriq_visualizer_performance.py",
+      "bytes": 8807,
+      "mode": "0644",
+      "sha256": "d0518f2e82fc4690a53b5f2cb064f40040ffedf43007d24be6e40ae7a9cf4005"
+    },
+    {
+      "path": "metriq_visualizer_preset_files.py",
+      "bytes": 8611,
+      "mode": "0644",
+      "sha256": "5d6d70a94624fb90ee175cad2704f682b97e604b6b32c0fbdc827147073dccc9"
+    },
+    {
+      "path": "metriq_visualizer_projects.py",
+      "bytes": 3949,
+      "mode": "0644",
+      "sha256": "af4c276a9a45266fc66fd781b320b1ac8a68fff0ccbf0777b5872e55cc8db5d0"
+    },
+    {
+      "path": "metriq_visualizer_realtime.py",
+      "bytes": 26599,
+      "mode": "0644",
+      "sha256": "a1ce5cd912254d01b4e3d1f2dc782895cb7a06e05077966e5c5ed1e4c8c1b61b"
+    },
+    {
+      "path": "metriq_visualizer_render.py",
+      "bytes": 28764,
+      "mode": "0644",
+      "sha256": "d95625746de9ebde97b350407ee909c3eab3703a4c09d1181e320ea1e30bc4fb"
+    },
+    {
+      "path": "metriq_visualizer_theme.py",
+      "bytes": 15838,
+      "mode": "0644",
+      "sha256": "0cc4be76a9d79354b52632e56b038e0b374623acb505717d9fcd24e8246135e7"
+    },
+    {
+      "path": "metriq_visualizer_visuals.py",
+      "bytes": 6659,
+      "mode": "0644",
+      "sha256": "ecd4dce2ce5c611b191ceaebcdd587a2744161f218707fa0c746dfcfb1061997"
+    },
+    {
+      "path": "presets/Default.mvpreset",
+      "bytes": 1635,
+      "mode": "0644",
+      "sha256": "fc27892744aea10e44f9e2e3e09a9952ffb7cdc3374ab4b4cb56fec253eec449"
+    },
+    {
+      "path": "presets/Glowstick.mvpreset",
+      "bytes": 1636,
+      "mode": "0644",
+      "sha256": "60208726b335e089ac541f23bb37eebfc9dc9e24c7e8d3b5769fa704b88bb862"
+    },
+    {
+      "path": "presets/Neon_Lights.mvpreset",
+      "bytes": 1635,
+      "mode": "0644",
+      "sha256": "0971a721830d6788240101535c9cf808af4c326d7f42eb54e6d59343c3123f61"
+    },
+    {
+      "path": "presets/README.md",
+      "bytes": 745,
+      "mode": "0644",
+      "sha256": "31499b918a046d418933f090f3aa3eb33b74a2a6e042c7f274d8995e1ed82bfb"
+    },
+    {
+      "path": "pyproject.toml",
+      "bytes": 2179,
+      "mode": "0644",
+      "sha256": "28867718b8878105a39bc52eabd4752b0f60e366d621b9daaaacdaaff4f62417"
+    },
+    {
+      "path": "requirements.txt",
+      "bytes": 201,
+      "mode": "0644",
+      "sha256": "fa5cad4fe87bb29b68945befa54f8311502cf8b7f691ed3472bfdd3d76ce5f6f"
+    },
+    {
+      "path": "run_linux.sh",
+      "bytes": 994,
+      "mode": "0755",
+      "sha256": "5cd7ef6bcfe3a2c83541928eb127599ba2c0213e3411926e645f6faba83f1e4f"
+    },
+    {
+      "path": "run_macos.command",
+      "bytes": 535,
+      "mode": "0755",
+      "sha256": "88af4fd3888349f90d2c95799c3da6f4fe37ccf34edc005abd1374559efdc762"
+    },
+    {
+      "path": "run_windows.bat",
+      "bytes": 383,
+      "mode": "0644",
+      "sha256": "67108e99ce736cddeba8ee5176be4f6b3e445bd46d4afcb047adbeafe3da2738"
+    },
+    {
+      "path": "tests/test_3d.py",
+      "bytes": 14746,
+      "mode": "0644",
+      "sha256": "05cd5c6e4aeb665f1ff70d3b27458206ac66bd34b91d35d5cedf083a285984de"
+    },
+    {
+      "path": "tests/test_cache.py",
+      "bytes": 2609,
+      "mode": "0644",
+      "sha256": "4997436b48242d325a3159a1467d9ef73aa4e141ffefdc8d3649050f52a9af14"
+    },
+    {
+      "path": "tests/test_core.py",
+      "bytes": 8585,
+      "mode": "0644",
+      "sha256": "d7bbfe82a612752559cac360fcc4bc14a80513c36fa936d6709193762244fdcc"
+    },
+    {
+      "path": "tests/test_data_export.py",
+      "bytes": 1722,
+      "mode": "0644",
+      "sha256": "bf93b44d518a54d9485179fd0de3ed3a3af4524716fa28842932696010fc5ee6"
+    },
+    {
+      "path": "tests/test_export_pipeline.py",
+      "bytes": 11104,
+      "mode": "0644",
+      "sha256": "a11522e3e6c105985cb043bdafc66acf1b704e918ffe9acfa0e833c18e715908"
+    },
+    {
+      "path": "tests/test_gui_smoke.py",
+      "bytes": 16821,
+      "mode": "0644",
+      "sha256": "e9d20a6777feac003a885d1fdc8f500cf5f09ab17303296bda464c8ac2440e05"
+    },
+    {
+      "path": "tests/test_layout.py",
+      "bytes": 2311,
+      "mode": "0644",
+      "sha256": "d05e469238689a3eabd3ef8b025bbc4d96dba5684e5cf35cd126d40e221c0a0a"
+    },
+    {
+      "path": "tests/test_live.py",
+      "bytes": 4363,
+      "mode": "0644",
+      "sha256": "abde6e8d7d6955c79f295b32a179090d19ad0e97933527423ca7ffcd71f9be26"
+    },
+    {
+      "path": "tests/test_merge_tool.py",
+      "bytes": 5004,
+      "mode": "0644",
+      "sha256": "133dc3d8d7d2b01b2ef223e55fe83ebe254dd7601dd49f90fe32a0fc90f4a85d"
+    },
+    {
+      "path": "tests/test_performance.py",
+      "bytes": 4077,
+      "mode": "0644",
+      "sha256": "f0a44719c85630b5534cd0b6f64f45a02ab6213b9df957223c798c328e6204d7"
+    },
+    {
+      "path": "tests/test_persistence.py",
+      "bytes": 4993,
+      "mode": "0644",
+      "sha256": "2fa6870bd64a0c3c23370929b8eebcfccc10e1743ccc8353ff6f806b8df976f4"
+    },
+    {
+      "path": "tests/test_render.py",
+      "bytes": 7105,
+      "mode": "0644",
+      "sha256": "a77d48f07000611bef211681c0cdd9902374c2e7061243c1119f76addf62d4c5"
+    },
+    {
+      "path": "tests/test_theme.py",
+      "bytes": 769,
+      "mode": "0644",
+      "sha256": "36fae09022ff0a7808aa616af0ef6f1e8aa352d1551f563f7ff5b806a91ebe95"
+    },
+    {
+      "path": "tests/test_v1125_regressions.py",
+      "bytes": 17262,
+      "mode": "0644",
+      "sha256": "654f32e976e33701c200d7cebd75f74afb108d9a6384da8cc3539a2cca0ef742"
+    },
+    {
+      "path": "tests/test_visuals.py",
+      "bytes": 1237,
+      "mode": "0644",
+      "sha256": "6bbea7f307fdfb937448dbacca90ac0039ad593dfae01755cb525d4bf60b514d"
+    },
+    {
+      "path": "tools/merge_into_repo.py",
+      "bytes": 11360,
+      "mode": "0755",
+      "sha256": "9fc9b00e0dbec85ba51581b5738f08543a215a59f656f9a5529a83a148e20e58"
+    },
+    {
+      "path": "tools/verify_source.py",
+      "bytes": 3325,
+      "mode": "0755",
+      "sha256": "dde784f07330829a481436aedb97b523f41f98526ddaeea9cf334fbdcf7bf013"
+    }
+  ]
+}

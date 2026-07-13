@@ -1,54 +1,35 @@
-# macOS install and compatibility
+# macOS installation
 
-Metriq Visualizer supports macOS, but user experience depends on how it is launched.
-For non-technical users, use the packaged `.app` from GitHub Releases when available.
-For developers, use the source install below.
-
-## Recommended: packaged app
-
-1. Open the latest GitHub Release.
-2. Download the file named similar to:
-   - `Metriq-Visualizer-macOS-arm64.zip` for Apple Silicon Macs.
-   - `Metriq-Visualizer-macOS-x86_64.zip` for Intel Macs.
-3. Unzip it.
-4. Move `Metriq Visualizer.app` to `/Applications`.
-5. Launch it from Finder.
-
-If macOS blocks the app because it is unsigned, right-click the app, choose **Open**, then choose **Open** again. A fully notarized build requires an Apple Developer ID certificate and notarization credentials in GitHub Actions.
-
-## Developer/source install
-
-Install Homebrew first if needed. Then:
+## Source launch
 
 ```bash
-brew install python@3.11 ffmpeg
-
-cd Metriq-Visualizer-main
-python3.11 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-python metriq_visualizer_app.py
+brew install python ffmpeg portaudio
+cd Metriq-Visualizer-v1.12.5
+./run_macos.command
 ```
 
-If the folder from GitHub is named something else, use that exact folder name. For example, GitHub's default source ZIP usually extracts to `Metriq-Visualizer-main`.
+Python 3.11 or 3.12 is recommended. Keep Homebrew/system/Conda/pyenv interpreters separate rather than mixing them in one virtual environment.
 
-## Common macOS issues
+## Microphone permission
 
-### App opens but export fails
+Packaged application builds include an `NSMicrophoneUsageDescription` entry and the Metriq bundle identifier. The first input attempt should request microphone access.
 
-Install FFmpeg if running from source:
+For source launches, permission belongs to the terminal application or Python host. If capture does not start:
 
-```bash
-brew install ffmpeg
-```
+1. Open **System Settings → Privacy & Security → Microphone**.
+2. Enable Metriq Visualizer, Terminal, iTerm, or the Python host used to launch it.
+3. Quit and reopen the affected host if macOS does not apply the change immediately.
+4. In Live Input, select **System default input**, choose **Host native**, and retry.
+5. Close other applications using exclusive input and verify `portaudio`/`sounddevice` are installed in the active interpreter.
 
-Packaged release builds include the Python app dependencies, but FFmpeg availability may still depend on the packaging method and platform. If export fails, install FFmpeg with Homebrew or use the legacy OpenCV export engine.
+## Retina performance
 
-### PyOpenGL / PySide launch errors
+The application uses a low-latency Qt renderer while playback, autorotation, camera drag, or live input is moving. The exact Matplotlib scene is retained for paused inspection and export. Balanced or Fast Preview plus adaptive density is recommended on high-DPI displays.
 
-Use Python 3.11 or 3.12. Avoid mixing system Python, Homebrew Python, and Conda in the same virtual environment.
+## Gatekeeper and signing
 
-### Apple Silicon vs Intel
+Unsigned packaged builds may be blocked. A public binary should use a Developer ID certificate and notarization. Source launches normally avoid the same bundle warning, though downloaded scripts can still carry quarantine metadata.
 
-Apple Silicon and Intel Macs should be packaged separately. Do not build one macOS binary and assume it works everywhere.
+## Apple Silicon and Intel
+
+Use a build created for the correct architecture unless the release explicitly states that it is universal. Python wheels and PyInstaller outputs are architecture-specific.

@@ -1,46 +1,52 @@
 # Copyright (c) Metriq Foundation, Inc.
 # This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
-# If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
+"""Local media/table analysis, formula evaluation, and geometry construction.
+
+This module deliberately has no Qt dependency.  It is the stable computational
+boundary used by the desktop shell, renderer, export worker, tests, and future
+headless integrations.
+"""
 
 from __future__ import annotations
 
 import ast
 import csv
+import io
 import math
 import re
 import shutil
 import subprocess
-import tempfile
+from collections.abc import Callable, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass, field
+from math import gcd
 from pathlib import Path
-from typing import Callable, Dict, Iterable
+from typing import Any
 
-import librosa
 import numpy as np
 
-
-VIDEO_EXTENSIONS = {
-    ".mp4",
-    ".mov",
-    ".avi",
-    ".mkv",
-    ".webm",
-    ".m4v",
-    ".mpg",
-    ".mpeg",
-    ".wmv",
-    ".flv",
-}
-
 TABLE_EXTENSIONS = {".csv", ".tsv", ".txt", ".xlsx"}
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v", ".mpg", ".mpeg", ".wmv", ".flv"}
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".aiff", ".aif", ".opus"}
+ANALYSIS_ENGINE_VERSION = "numpy-scipy-bounded-v3"
+MAX_ANALYSIS_FRAMES = 4096
 
 DEFAULT_PRESETS: dict[str, dict[str, str]] = {
+    # Original Metriq mappings are intentionally retained.  Existing projects
+    # and old .mvpreset files depend on these names and formula aliases.
     "Pitch/Timbre/Motion": {
         "x": "0.7*chroma_mean + 0.3*f0_hz",
         "y": "0.6*mfcc_1 + 0.4*mfcc_2",
         "z": "0.6*spectral_flux + 0.4*onset_strength",
         "color": "spectral_centroid_hz",
         "size": "rms",
+    },
+    "Birdsong": {
+        "x": "0.65*f0_hz + 0.35*chroma_mean",
+        "y": "0.55*mfcc_1 + 0.30*mfcc_2 + 0.15*mfcc_3",
+        "z": "0.55*spectral_flux + 0.30*onset_strength + 0.15*zcr",
+        "color": "spectral_centroid_hz",
+        "size": "0.55*rms + 0.45*onset_strength",
     },
     "Audio PCA": {
         "x": "pc1",
@@ -55,6 +61,27 @@ DEFAULT_PRESETS: dict[str, dict[str, str]] = {
         "z": "0.6*spectral_flatness + 0.4*chroma_entropy",
         "color": "dominant_freq_hz",
         "size": "0.7*rms + 0.3*zcr",
+    },
+    "Spectral orbit": {
+        "x": "spectral_centroid",
+        "y": "spectral_bandwidth",
+        "z": "spectral_flux",
+        "color": "dominant_frequency",
+        "size": "rms",
+    },
+    "Timbre lattice": {
+        "x": "mfcc_1",
+        "y": "mfcc_2",
+        "z": "mfcc_3",
+        "color": "chroma_mean",
+        "size": "rms",
+    },
+    "Rhythm trail": {
+        "x": "time",
+        "y": "onset_strength",
+        "z": "spectral_flux",
+        "color": "rms_db",
+        "size": "onset_strength",
     },
     "Table / PCA explorer": {
         "x": "pc1",
@@ -79,964 +106,1303 @@ DEFAULT_PRESETS: dict[str, dict[str, str]] = {
     },
 }
 
-
-DEFAULT_PRESET_DISPLAY_LABELS: dict[str, dict[str, str]] = {
-    "Audio PCA": {
-        "x": "PCA axis 1",
-        "y": "PCA axis 2",
-        "z": "PCA axis 3",
-        "color": "Pitch",
-        "size": "Energy / attack",
-    },
-    "Pitch/Timbre/Motion": {
-        "x": "Pitch",
-        "y": "Timbre",
-        "z": "Motion",
-        "color": "Brightness",
-        "size": "Loudness",
-    },
-    "Rhythm / Brightness / Texture": {
-        "x": "Rhythm",
-        "y": "Brightness",
-        "z": "Texture",
-        "color": "Frequency",
-        "size": "Loudness / roughness",
-    },
-    "Table / PCA explorer": {
-        "x": "PCA axis 1",
-        "y": "PCA axis 2",
-        "z": "PCA axis 3",
-        "color": "Time",
-        "size": "Magnitude",
-    },
-    "Table / Spread / Change": {
-        "x": "Mean",
-        "y": "Spread",
-        "z": "Change",
-        "color": "Time",
-        "size": "Magnitude",
-    },
-    "Manual starter": {
-        "x": "Geometry X",
-        "y": "Geometry Y",
-        "z": "Geometry Z",
-        "color": "Frequency",
-        "size": "Energy",
-    },
-}
-
-FEATURE_FRIENDLY_LABELS: dict[str, str] = {
-    "time": "Time",
-    "t": "Time",
-    "rms": "Loudness",
-    "rms_db": "Loudness (dB)",
-    "zcr": "Noisiness",
-    "spectral_centroid_hz": "Brightness",
-    "spectral_bandwidth_hz": "Spectral spread",
-    "spectral_rolloff_hz": "Rolloff",
-    "spectral_flatness": "Tone vs. noise",
-    "spectral_flux": "Motion / change",
-    "spectral_contrast_mean": "Spectral contrast",
-    "dominant_freq_hz": "Dominant frequency",
-    "onset_strength": "Attack",
-    "chroma_mean": "Pitch class",
-    "chroma_entropy": "Pitch entropy",
-    "f0_hz": "Fundamental pitch",
-    "pc1": "PCA axis 1",
-    "pc2": "PCA axis 2",
-    "pc3": "PCA axis 3",
-    "row_index": "Row index",
-    "magnitude": "Magnitude",
-    "delta_magnitude": "Change",
-    "column_mean": "Mean",
-    "column_spread": "Spread",
-}
-
-FEATURE_DESCRIPTIONS = {
-    "time": "Time in seconds.",
-    "t": "Alias for time in seconds.",
-    "rms": "Root-mean-square energy (loudness envelope).",
-    "rms_db": "RMS energy in dB relative to the loudest frame in the file.",
-    "zcr": "Zero crossing rate (noisiness / roughness proxy).",
-    "spectral_centroid_hz": "Spectral centroid in Hz (brightness).",
-    "spectral_bandwidth_hz": "Spectral bandwidth in Hz (spread).",
-    "spectral_rolloff_hz": "Spectral rolloff in Hz.",
-    "spectral_flatness": "Spectral flatness (tone vs. noise).",
+FEATURE_DESCRIPTIONS: dict[str, str] = {
+    "time": "Frame timestamp in seconds.",
+    "frame": "Zero-based analysis-frame index.",
+    "rms": "Root-mean-square signal energy.",
+    "rms_db": "Signal energy in decibels relative to the source peak.",
+    "zero_crossing_rate": "Rate at which the waveform changes sign.",
+    "spectral_centroid": "Energy-weighted center frequency in hertz.",
+    "spectral_bandwidth": "Spread of spectral energy around the centroid.",
+    "spectral_rolloff": "Frequency below which 85% of spectral energy lies.",
+    "spectral_flatness": "Noise-like versus tonal spectral character.",
     "spectral_flux": "Frame-to-frame spectral change.",
-    "spectral_contrast_mean": "Mean spectral contrast across bands.",
-    "dominant_freq_hz": "Frequency of the strongest spectral bin in Hz.",
-    "onset_strength": "Onset strength / local attack energy.",
-    "chroma_mean": "Mean chroma activity across pitch classes.",
-    "chroma_entropy": "Pitch-class entropy.",
-    "f0_hz": "Estimated fundamental frequency in Hz.",
-    "row_index": "Row number from an imported table.",
-    "magnitude": "Row-wise magnitude across imported numeric columns.",
-    "delta_magnitude": "Row-to-row change magnitude across imported numeric columns.",
-    "column_mean": "Mean value across imported numeric columns.",
-    "column_spread": "Standard deviation across imported numeric columns.",
+    "onset_strength": "Local transient/onset intensity.",
+    "dominant_frequency": "Strongest FFT-bin frequency in hertz.",
+    "fundamental_frequency": "Bounded harmonic-summation estimate of the fundamental frequency in hertz.",
+    "chroma_mean": "Average energy across the twelve pitch classes.",
+    "pc1": "First principal component of the available numeric features.",
+    "pc2": "Second principal component of the available numeric features.",
+    "pc3": "Third principal component of the available numeric features.",
+    "magnitude": "Euclidean magnitude across imported numeric columns.",
+    "column_mean": "Mean across imported numeric columns for each row.",
+    "column_spread": "Standard deviation across imported numeric columns for each row.",
+    "delta_magnitude": "Absolute row-to-row change in magnitude.",
+    "t": "Alias for frame timestamp in seconds.",
+    "row_index": "Alias for the analysis-frame or imported-row index.",
+    "zcr": "Legacy alias for zero-crossing rate.",
+    "spectral_centroid_hz": "Legacy hertz alias for spectral centroid.",
+    "spectral_bandwidth_hz": "Legacy hertz alias for spectral bandwidth.",
+    "spectral_rolloff_hz": "Legacy hertz alias for spectral rolloff.",
+    "dominant_freq_hz": "Legacy hertz alias for dominant frequency.",
+    "f0_hz": "Legacy alias for the bounded fundamental-frequency estimate.",
+    "chroma_entropy": "Normalized entropy across the twelve pitch classes.",
+    "spectral_contrast_mean": "Fast contrast proxy derived from spectral flatness.",
 }
 
-PITCH_CLASS_NAMES = [
-    "C",
-    "Cs",
-    "D",
-    "Ds",
-    "E",
-    "F",
-    "Fs",
-    "G",
-    "Gs",
-    "A",
-    "As",
-    "B",
-]
+
+_LEGACY_FEATURE_ALIASES: dict[str, str] = {
+    "t": "time",
+    "row_index": "frame",
+    "zcr": "zero_crossing_rate",
+    "spectral_centroid_hz": "spectral_centroid",
+    "spectral_bandwidth_hz": "spectral_bandwidth",
+    "spectral_rolloff_hz": "spectral_rolloff",
+    "dominant_freq_hz": "dominant_frequency",
+    "f0_hz": "fundamental_frequency",
+}
 
 
-@dataclass
+def _install_legacy_feature_aliases(features: dict[str, np.ndarray], length: int) -> None:
+    """Install historical formula names without duplicating analysis work."""
+
+    if "fundamental_frequency" not in features and "dominant_frequency" in features:
+        features["fundamental_frequency"] = _align_vector(features["dominant_frequency"], length)
+
+    for alias, source in _LEGACY_FEATURE_ALIASES.items():
+        if alias not in features and source in features:
+            features[alias] = _align_vector(features[source], length)
+
+    if "chroma_entropy" not in features:
+        channels = [features.get(f"chroma_{index}") for index in range(1, 13)]
+        if all(channel is not None for channel in channels):
+            chroma = np.vstack([_align_vector(channel, length) for channel in channels if channel is not None])
+            chroma = np.clip(chroma, 0.0, None)
+            chroma /= np.maximum(np.sum(chroma, axis=0, keepdims=True), 1e-20)
+            entropy = -np.sum(chroma * np.log(np.maximum(chroma, 1e-20)), axis=0) / np.log(12.0)
+            features["chroma_entropy"] = entropy.astype(np.float32)
+        else:
+            features["chroma_entropy"] = np.zeros(length, dtype=np.float32)
+
+    if "spectral_contrast_mean" not in features:
+        flatness = _align_vector(features.get("spectral_flatness", np.zeros(length)), length)
+        finite = np.clip(flatness, 0.0, 1.0)
+        features["spectral_contrast_mean"] = (1.0 - finite).astype(np.float32)
+
+
+def _safe_setting_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def _safe_setting_float(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisSettings:
+    """Creator-controlled extraction settings with conservative local bounds."""
+
+    sample_rate: int = 0
+    n_fft: int = 2048
+    hop_length: int = 512
+    min_frequency: float = 0.0
+    max_frequency: float = 0.0
+    max_frames: int = MAX_ANALYSIS_FRAMES
+    n_mels: int = 96
+    mfcc_count: int = 20
+
+    def normalized(self, *, native_sample_rate: int | None = None) -> AnalysisSettings:
+        sample_rate = int(self.sample_rate)
+        if sample_rate != 0:
+            sample_rate = int(np.clip(sample_rate, 8_000, 192_000))
+        elif native_sample_rate is not None:
+            sample_rate = 0
+        n_fft = int(np.clip(self.n_fft, 256, 16_384))
+        n_fft = 1 << int(round(math.log2(max(256, n_fft))))
+        n_fft = int(np.clip(n_fft, 256, 16_384))
+        hop = int(np.clip(self.hop_length, 16, n_fft))
+        minimum = max(0.0, float(self.min_frequency))
+        nyquist = (sample_rate or int(native_sample_rate or 192_000)) / 2.0
+        maximum = float(self.max_frequency)
+        maximum = (
+            0.0
+            if maximum <= 0.0
+            else float(np.clip(maximum, minimum + 1.0, max(minimum + 1.0, nyquist)))
+        )
+        return AnalysisSettings(
+            sample_rate=sample_rate,
+            n_fft=n_fft,
+            hop_length=hop,
+            min_frequency=minimum,
+            max_frequency=maximum,
+            max_frames=int(np.clip(self.max_frames, 128, 16_384)),
+            n_mels=int(np.clip(self.n_mels, 24, 256)),
+            mfcc_count=int(np.clip(self.mfcc_count, 4, 40)),
+        )
+
+    def to_dict(self) -> dict[str, int | float]:
+        return {
+            "sample_rate": int(self.sample_rate),
+            "n_fft": int(self.n_fft),
+            "hop_length": int(self.hop_length),
+            "min_frequency": float(self.min_frequency),
+            "max_frequency": float(self.max_frequency),
+            "max_frames": int(self.max_frames),
+            "n_mels": int(self.n_mels),
+            "mfcc_count": int(self.mfcc_count),
+        }
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, Any] | None) -> AnalysisSettings:
+        data = values or {}
+        return cls(
+            sample_rate=_safe_setting_int(data.get("sample_rate", data.get("sample_rate_hz")), 0),
+            n_fft=_safe_setting_int(data.get("n_fft", data.get("fft_size")), 2048),
+            hop_length=_safe_setting_int(data.get("hop_length", data.get("hop")), 512),
+            min_frequency=_safe_setting_float(data.get("min_frequency", data.get("fmin")), 0.0),
+            max_frequency=_safe_setting_float(data.get("max_frequency", data.get("fmax")), 0.0),
+            max_frames=_safe_setting_int(
+                data.get("max_frames", data.get("max_analysis_frames")), MAX_ANALYSIS_FRAMES
+            ),
+            n_mels=_safe_setting_int(data.get("n_mels"), 96),
+            mfcc_count=_safe_setting_int(data.get("mfcc_count", data.get("n_mfcc")), 20),
+        ).normalized()
+
+    def signature(self) -> str:
+        values = self.normalized().to_dict()
+        return ";".join(f"{key}={values[key]}" for key in sorted(values))
+
+
+@dataclass(slots=True)
 class AnalysisResult:
-    source_path: str
-    audio_path: str
-    sample_rate: int
-    duration: float
-    hop_length: int
-    n_fft: int
+    """Time-aligned source analysis consumed by mapping and rendering."""
+
+    source_path: Path
+    source_kind: str
     times: np.ndarray
+    duration: float
     features: dict[str, np.ndarray]
-    spectrogram_db: np.ndarray
-    spectrogram_freqs_hz: np.ndarray
-    chromagram: np.ndarray
-    mfcc: np.ndarray
+    sample_rate: int = 0
+    audio_path: Path | None = None
+    has_video: bool = False
+    spectrogram: np.ndarray = field(default_factory=lambda: np.empty((0, 0), dtype=np.float32))
+    spectrogram_frequencies: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=np.float32))
+    chromagram: np.ndarray = field(default_factory=lambda: np.empty((0, 0), dtype=np.float32))
+    mfcc: np.ndarray = field(default_factory=lambda: np.empty((0, 0), dtype=np.float32))
+    waveform: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=np.float32))
+    metadata: dict[str, Any] = field(default_factory=dict)
     feature_descriptions: dict[str, str] = field(default_factory=dict)
-    source_kind: str = "media"
+
+    def __post_init__(self) -> None:
+        self.source_path = Path(self.source_path)
+        self.times = _vector(self.times)
+        self.duration = float(max(0.0, self.duration))
+        self.features = {str(key): _align_vector(value, self.times.size) for key, value in self.features.items()}
+        _install_legacy_feature_aliases(self.features, self.times.size)
+        self.spectrogram = np.asarray(self.spectrogram, dtype=np.float32)
+        self.spectrogram_frequencies = _vector(self.spectrogram_frequencies)
+        self.chromagram = np.asarray(self.chromagram, dtype=np.float32)
+        self.mfcc = np.asarray(self.mfcc, dtype=np.float32)
+        self.waveform = _vector(self.waveform)
+        if self.audio_path is not None:
+            self.audio_path = Path(self.audio_path)
 
 
-@dataclass
+@dataclass(slots=True)
 class GeometryResult:
+    """Mapped and sampled visual geometry."""
+
     x_full: np.ndarray
     y_full: np.ndarray
     z_full: np.ndarray
     color_full: np.ndarray
     size_full: np.ndarray
-    size_display_full: np.ndarray
     times_full: np.ndarray
+    rgba_full: np.ndarray
+    source_indices_full: np.ndarray
     x_plot: np.ndarray
     y_plot: np.ndarray
     z_plot: np.ndarray
     color_plot: np.ndarray
     size_plot: np.ndarray
     times_plot: np.ndarray
-    plot_indices: np.ndarray
-    labels: dict[str, str]
-    normalize_mode: str
-    colormap: str
-    active_mask_full: np.ndarray
-    low_volume_cutoff_db: float
+    rgba_plot: np.ndarray
+    source_indices_plot: np.ndarray
+    formulas: dict[str, str] = field(default_factory=dict)
+    normalize_mode: str = "zscore"
+    colormap: str = "plasma"
+
+    def __post_init__(self) -> None:
+        for name in (
+            "x_full", "y_full", "z_full", "color_full", "size_full", "times_full",
+            "x_plot", "y_plot", "z_plot", "color_plot", "size_plot", "times_plot",
+        ):
+            setattr(self, name, _vector(getattr(self, name)))
+        self.rgba_full = np.asarray(self.rgba_full, dtype=np.float32)
+        self.rgba_plot = np.asarray(self.rgba_plot, dtype=np.float32)
+        self.source_indices_full = np.asarray(self.source_indices_full, dtype=np.int64).reshape(-1)
+        self.source_indices_plot = np.asarray(self.source_indices_plot, dtype=np.int64).reshape(-1)
 
 
-def is_video_file(path: str | Path) -> bool:
-    return Path(path).suffix.lower() in VIDEO_EXTENSIONS
+# ---------------------------------------------------------------------------
+# General utilities
 
 
 def is_table_file(path: str | Path) -> bool:
     return Path(path).suffix.lower() in TABLE_EXTENSIONS
 
 
-def _safe_feature_name(name: str, used: set[str]) -> str:
-    base = re.sub(r"[^0-9a-zA-Z_]+", "_", str(name or "").strip().lower()).strip("_")
-    if not base:
-        base = "column"
-    if base[0].isdigit():
-        base = f"col_{base}"
-    candidate = base
-    suffix = 2
+def _vector(value: Any) -> np.ndarray:
+    array = np.asarray(value, dtype=np.float32).reshape(-1)
+    if array.size:
+        finite = np.isfinite(array)
+        if not finite.all():
+            replacement = float(np.nanmedian(array[finite])) if finite.any() else 0.0
+            array = np.where(finite, array, replacement).astype(np.float32, copy=False)
+    return array
+
+
+def _align_vector(value: Any, length: int) -> np.ndarray:
+    array = _vector(value)
+    if length <= 0:
+        return np.empty(0, dtype=np.float32)
+    if array.size == length:
+        return array
+    if array.size == 0:
+        return np.zeros(length, dtype=np.float32)
+    if array.size == 1:
+        return np.full(length, float(array[0]), dtype=np.float32)
+    old_x = np.linspace(0.0, 1.0, array.size, dtype=np.float64)
+    new_x = np.linspace(0.0, 1.0, length, dtype=np.float64)
+    return np.interp(new_x, old_x, array).astype(np.float32)
+
+
+def _safe_identifier(name: str, used: set[str]) -> str:
+    candidate = re.sub(r"[^0-9A-Za-z_]+", "_", str(name).strip()).strip("_").lower()
+    if not candidate:
+        candidate = "input"
+    if candidate[0].isdigit():
+        candidate = f"input_{candidate}"
+    base = candidate
+    index = 2
     while candidate in used:
-        candidate = f"{base}_{suffix}"
-        suffix += 1
+        candidate = f"{base}_{index}"
+        index += 1
     used.add(candidate)
     return candidate
 
 
-def _parse_numeric(value) -> float | None:
-    if value is None:
-        return None
-    if isinstance(value, (int, float, np.integer, np.floating)):
-        value = float(value)
-        return value if math.isfinite(value) else None
-    text = str(value).strip()
-    if not text:
-        return None
-    text = text.replace(",", "")
+def _robust_standardize(matrix: np.ndarray) -> np.ndarray:
+    matrix = np.asarray(matrix, dtype=np.float64)
+    if matrix.ndim == 1:
+        matrix = matrix[:, None]
+    med = np.nanmedian(matrix, axis=0)
+    matrix = np.where(np.isfinite(matrix), matrix, med)
+    mean = np.mean(matrix, axis=0)
+    std = np.std(matrix, axis=0)
+    std = np.where(std > 1e-12, std, 1.0)
+    return (matrix - mean) / std
+
+
+def _principal_components(matrix: np.ndarray, count: int = 3) -> np.ndarray:
+    values = _robust_standardize(matrix)
+    rows = values.shape[0]
+    if rows == 0:
+        return np.empty((0, count), dtype=np.float32)
+    if values.shape[1] == 0:
+        return np.zeros((rows, count), dtype=np.float32)
+    values = values - values.mean(axis=0, keepdims=True)
     try:
-        parsed = float(text)
-    except Exception:
-        return None
-    return parsed if math.isfinite(parsed) else None
+        u, singular, _vt = np.linalg.svd(values, full_matrices=False)
+        scores = u * singular[None, :]
+    except np.linalg.LinAlgError:
+        scores = values
+    result = np.zeros((rows, count), dtype=np.float32)
+    available = min(count, scores.shape[1])
+    if available:
+        result[:, :available] = scores[:, :available].astype(np.float32)
+    return result
 
 
-def _read_delimited_rows(path: str | Path) -> tuple[list[str], list[list[object]]]:
-    with Path(path).expanduser().open("r", encoding="utf-8-sig", newline="") as handle:
-        sample = handle.read(4096)
-        handle.seek(0)
+def _normalize_panel(matrix: np.ndarray) -> np.ndarray:
+    values = np.asarray(matrix, dtype=np.float32)
+    if values.size == 0:
+        return values
+    finite = np.isfinite(values)
+    if not finite.any():
+        return np.zeros_like(values)
+    lo, hi = np.percentile(values[finite], [2.0, 98.0])
+    if hi <= lo + 1e-12:
+        return np.zeros_like(values)
+    return np.clip((values - lo) / (hi - lo), 0.0, 1.0).astype(np.float32)
+
+
+# ---------------------------------------------------------------------------
+# Formula evaluator
+
+
+def _smooth(values: Any, window: Any = 5) -> np.ndarray:
+    array = _vector(values)
+    size = max(1, int(round(float(np.asarray(window).reshape(-1)[0]))))
+    if size <= 1 or array.size <= 2:
+        return array
+    size = min(size, array.size)
+    kernel = np.ones(size, dtype=np.float64) / size
+    padded = np.pad(array, (size // 2, size - 1 - size // 2), mode="edge")
+    return np.convolve(padded, kernel, mode="valid").astype(np.float32)
+
+
+def _aggregate(function: Callable[..., np.ndarray], *values: Any) -> np.ndarray:
+    arrays = [np.asarray(value, dtype=np.float64) for value in values]
+    if not arrays:
+        return np.asarray(0.0)
+    broadcast = np.broadcast_arrays(*arrays)
+    return function(np.stack(broadcast, axis=0), axis=0)
+
+
+_FORMULA_FUNCTIONS: dict[str, Callable[..., Any]] = {
+    "abs": np.abs,
+    "sqrt": lambda value: np.sqrt(np.clip(value, 0.0, None)),
+    "log": lambda value: np.log(np.clip(value, 1e-12, None)),
+    "log1p": lambda value: np.log1p(np.clip(value, -0.999999, None)),
+    "exp": lambda value: np.exp(np.clip(value, -60.0, 60.0)),
+    "clip": np.clip,
+    "smooth": _smooth,
+    "mean": lambda *values: _aggregate(np.mean, *values),
+    "avg": lambda *values: _aggregate(np.mean, *values),
+    "sum": lambda *values: _aggregate(np.sum, *values),
+    "max": lambda *values: _aggregate(np.max, *values),
+    "min": lambda *values: _aggregate(np.min, *values),
+}
+
+_ALLOWED_BINOPS: dict[type[ast.operator], Callable[[Any, Any], Any]] = {
+    ast.Add: lambda a, b: a + b,
+    ast.Sub: lambda a, b: a - b,
+    ast.Mult: lambda a, b: a * b,
+    ast.Div: lambda a, b: a / np.where(np.abs(b) > 1e-12, b, np.sign(b) * 1e-12 + (b == 0) * 1e-12),
+    ast.Pow: lambda a, b: np.power(np.clip(a, -1e12, 1e12), np.clip(b, -16, 16)),
+    ast.Mod: lambda a, b: np.mod(a, b),
+}
+_ALLOWED_UNARYOPS: dict[type[ast.unaryop], Callable[[Any], Any]] = {ast.UAdd: lambda a: a, ast.USub: lambda a: -a}
+
+
+class FormulaError(ValueError):
+    pass
+
+
+def evaluate_formula(expression: str, features: Mapping[str, np.ndarray], length: int | None = None) -> np.ndarray:
+    """Evaluate a small, array-oriented expression without Python ``eval``."""
+
+    text = str(expression).strip()
+    if not text:
+        raise FormulaError("Formula is empty.")
+    target_length = int(length if length is not None else max((np.asarray(v).size for v in features.values()), default=1))
+    names = {str(key): _align_vector(value, target_length) for key, value in features.items()}
+
+    try:
+        root = ast.parse(text, mode="eval")
+    except SyntaxError as exc:
+        raise FormulaError(f"Invalid formula syntax: {exc.msg}") from exc
+
+    def visit(node: ast.AST) -> Any:
+        if isinstance(node, ast.Expression):
+            return visit(node.body)
+        if isinstance(node, ast.Constant) and isinstance(node.value, int | float):
+            return float(node.value)
+        if isinstance(node, ast.Name):
+            if node.id in names:
+                return names[node.id]
+            if node.id == "pi":
+                return math.pi
+            if node.id == "e":
+                return math.e
+            raise FormulaError(f"Unknown feature or constant: {node.id}")
+        if isinstance(node, ast.BinOp) and type(node.op) in _ALLOWED_BINOPS:
+            with np.errstate(all="ignore"):
+                return _ALLOWED_BINOPS[type(node.op)](visit(node.left), visit(node.right))
+        if isinstance(node, ast.UnaryOp) and type(node.op) in _ALLOWED_UNARYOPS:
+            return _ALLOWED_UNARYOPS[type(node.op)](visit(node.operand))
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            function = _FORMULA_FUNCTIONS.get(node.func.id)
+            if function is None:
+                raise FormulaError(f"Unsupported function: {node.func.id}")
+            if node.keywords:
+                raise FormulaError("Keyword arguments are not supported in formulas.")
+            try:
+                with np.errstate(all="ignore"):
+                    return function(*(visit(argument) for argument in node.args))
+            except Exception as exc:  # noqa: BLE001
+                raise FormulaError(f"Could not evaluate {node.func.id}(): {exc}") from exc
+        raise FormulaError(f"Unsupported formula element: {node.__class__.__name__}")
+
+    value = visit(root)
+    return _align_vector(value, target_length)
+
+
+# ---------------------------------------------------------------------------
+# Table analysis
+
+
+def _read_delimited_table(path: Path) -> tuple[list[str], list[list[Any]]]:
+    text = path.read_text(encoding="utf-8-sig", errors="replace")
+    sample = text[:8192]
+    if path.suffix.lower() == ".tsv":
+        dialect = csv.excel_tab
+    else:
         try:
-            dialect = csv.Sniffer().sniff(sample, delimiters=",;	|")
-        except Exception:
-            dialect = csv.excel_tab if Path(path).suffix.lower() == ".tsv" else csv.excel
-        reader = csv.reader(handle, dialect)
-        rows = [list(row) for row in reader if any(str(cell).strip() for cell in row)]
+            dialect = csv.Sniffer().sniff(sample, delimiters=",\t;|")
+        except csv.Error:
+            dialect = csv.excel
+    rows = list(csv.reader(io.StringIO(text), dialect))
     if not rows:
-        raise ValueError("The selected table file is empty.")
+        raise ValueError("The table is empty.")
     first = rows[0]
-    header_like = any(_parse_numeric(cell) is None for cell in first)
-    if header_like:
-        headers = [str(cell).strip() or f"Column {idx + 1}" for idx, cell in enumerate(first)]
+    has_header = True
+    with suppress(csv.Error):
+        has_header = csv.Sniffer().has_header(sample)
+    if has_header:
+        headers = [str(value).strip() or f"Column {index + 1}" for index, value in enumerate(first)]
         data_rows = rows[1:]
     else:
-        headers = [f"Column {idx + 1}" for idx in range(len(first))]
+        headers = [f"Input {index + 1}" for index in range(len(first))]
         data_rows = rows
     return headers, data_rows
 
 
-def _read_xlsx_rows(path: str | Path) -> tuple[list[str], list[list[object]]]:
+def _read_xlsx_table(path: Path) -> tuple[list[str], list[list[Any]]]:
     try:
         from openpyxl import load_workbook
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError("XLSX import requires openpyxl. Install it from requirements.txt and retry.") from exc
-
-    workbook = load_workbook(filename=str(Path(path).expanduser()), read_only=True, data_only=True)
+    except ImportError as exc:  # pragma: no cover - dependency error path
+        raise RuntimeError("XLSX import requires openpyxl.") from exc
+    workbook = load_workbook(path, read_only=True, data_only=True)
     try:
         sheet = workbook.active
-        rows = [list(row) for row in sheet.iter_rows(values_only=True) if any(cell not in (None, "") for cell in row)]
+        iterator = sheet.iter_rows(values_only=True)
+        first = next(iterator, None)
+        if first is None:
+            raise ValueError("The workbook's active sheet is empty.")
+        headers = [str(value).strip() if value is not None else f"Column {index + 1}" for index, value in enumerate(first)]
+        rows = [list(row) for row in iterator]
     finally:
         workbook.close()
-    if not rows:
-        raise ValueError("The selected spreadsheet is empty.")
-    first = rows[0]
-    header_like = any(_parse_numeric(cell) is None for cell in first)
-    if header_like:
-        headers = [str(cell).strip() or f"Column {idx + 1}" for idx, cell in enumerate(first)]
-        data_rows = rows[1:]
-    else:
-        headers = [f"Column {idx + 1}" for idx in range(len(first))]
-        data_rows = rows
-    return headers, data_rows
+    return headers, rows
 
 
-def _time_header_kind(name: str) -> str | None:
-    cleaned = re.sub(r"[^a-z0-9]+", "", str(name or "").lower())
-    if cleaned in {"time", "t", "seconds", "second", "sec", "secs", "times", "timesec", "elapsed", "elapsedtime"} or cleaned.endswith("seconds") or cleaned.endswith("sec"):
-        return "seconds"
-    if cleaned in {"ms", "millisecond", "milliseconds", "timems", "elapsedms"} or cleaned.endswith("ms"):
-        return "milliseconds"
-    if cleaned in {"timestamp", "epoch", "epochtime", "unix", "unixseconds"} or cleaned.endswith("timestamp"):
-        return "timestamp"
-    return None
+def _coerce_numeric_columns(headers: Sequence[str], rows: Sequence[Sequence[Any]]) -> tuple[dict[str, np.ndarray], dict[str, str]]:
+    width = max(len(headers), max((len(row) for row in rows), default=0))
+    if width <= 0:
+        raise ValueError("The table does not contain columns.")
+    padded_headers = list(headers) + [f"Column {index + 1}" for index in range(len(headers), width)]
+    used: set[str] = set()
+    result: dict[str, np.ndarray] = {}
+    descriptions: dict[str, str] = {}
+    for column_index in range(width):
+        values: list[float] = []
+        numeric = 0
+        nonempty = 0
+        for row in rows:
+            raw = row[column_index] if column_index < len(row) else None
+            if raw is None or str(raw).strip() == "":
+                values.append(float("nan"))
+                continue
+            nonempty += 1
+            try:
+                values.append(float(raw))
+                numeric += 1
+            except (TypeError, ValueError):
+                values.append(float("nan"))
+        if not values or numeric < max(1, math.ceil(nonempty * 0.6)):
+            continue
+        array = np.asarray(values, dtype=np.float64)
+        finite = np.isfinite(array)
+        fill = float(np.nanmedian(array[finite])) if finite.any() else 0.0
+        array = np.where(finite, array, fill).astype(np.float32)
+        key = _safe_identifier(padded_headers[column_index], used)
+        result[key] = array
+        descriptions[key] = f'Imported numeric column "{padded_headers[column_index]}".'
+    if not result:
+        raise ValueError("No numeric columns were found. At least one mostly-numeric column is required.")
+    return result, descriptions
 
 
 def analysis_from_table_file(path: str | Path) -> AnalysisResult:
-    source = Path(path).expanduser()
-    suffix = source.suffix.lower()
-    if suffix == ".xlsx":
-        headers, rows = _read_xlsx_rows(source)
+    source = Path(path).expanduser().resolve()
+    if source.suffix.lower() == ".xlsx":
+        headers, rows = _read_xlsx_table(source)
     else:
-        headers, rows = _read_delimited_rows(source)
+        headers, rows = _read_delimited_table(source)
+    features, descriptions = _coerce_numeric_columns(headers, rows)
+    row_count = max(array.size for array in features.values())
+    features = {name: _align_vector(values, row_count) for name, values in features.items()}
+    matrix = np.column_stack(list(features.values())).astype(np.float32)
 
-    if not rows:
-        raise ValueError("The selected table did not contain any data rows.")
-
-    column_count = max(len(headers), max(len(row) for row in rows))
-    headers = list(headers) + [f"Column {idx + 1}" for idx in range(len(headers), column_count)]
-    used: set[str] = set()
-    numeric_columns: list[tuple[str, str, np.ndarray, str | None]] = []
-
-    for idx in range(column_count):
-        original_name = headers[idx] if idx < len(headers) else f"Column {idx + 1}"
-        raw_values = [row[idx] if idx < len(row) else None for row in rows]
-        parsed = [_parse_numeric(value) for value in raw_values]
-        finite = [value for value in parsed if value is not None]
-        if len(finite) < 2:
-            continue
-        if len(finite) < max(2, int(round(0.6 * len(parsed)))):
-            continue
-        fill = float(np.median(np.asarray(finite, dtype=np.float64))) if finite else 0.0
-        arr = np.asarray([fill if value is None else value for value in parsed], dtype=np.float64)
-        safe_name = _safe_feature_name(original_name, used)
-        numeric_columns.append((safe_name, str(original_name), arr, _time_header_kind(original_name)))
-
-    if not numeric_columns:
-        raise ValueError("No usable numeric columns were found. Provide a CSV or spreadsheet with at least one numeric field.")
-
-    row_count = int(numeric_columns[0][2].size)
-    time_name = None
-    time_values = None
-    for safe_name, original_name, arr, kind in numeric_columns:
-        if kind is None:
-            continue
-        candidate = np.asarray(arr, dtype=np.float64).reshape(-1)
-        if kind == "milliseconds":
-            candidate = (candidate - candidate[0]) / 1000.0
-        else:
-            candidate = candidate - candidate[0]
-        if candidate.size > 1 and np.all(np.diff(candidate) >= -1e-9) and float(candidate[-1] - candidate[0]) >= 0.0:
-            time_name = safe_name
-            time_values = candidate
-            break
-
-    if time_values is None:
-        time_values = np.arange(row_count, dtype=np.float64)
+    time_key = next((name for name in features if name in {"time", "timestamp", "seconds", "elapsed", "elapsed_seconds"}), None)
+    if time_key is not None:
+        times = features[time_key].astype(np.float32, copy=True)
+        times -= float(times.min()) if times.size else 0.0
+        if times.size > 1 and np.any(np.diff(times) < 0):
+            times = np.arange(row_count, dtype=np.float32)
     else:
-        order = np.argsort(time_values, kind="stable")
-        time_values = np.asarray(time_values[order], dtype=np.float64)
-        numeric_columns = [(safe, original, arr[order], kind) for safe, original, arr, kind in numeric_columns]
+        times = np.arange(row_count, dtype=np.float32)
+    duration = float(times[-1]) if times.size else 0.0
 
-    duration = float(time_values[-1]) if time_values.size > 0 else float(max(0, row_count - 1))
-    if duration <= 0.0 and row_count > 1:
-        time_values = np.arange(row_count, dtype=np.float64)
-        duration = float(time_values[-1])
-
-    features: dict[str, np.ndarray] = {"time": time_values, "t": time_values, "row_index": np.arange(row_count, dtype=np.float64)}
-    feature_descriptions = dict(FEATURE_DESCRIPTIONS)
-    feature_descriptions["time"] = "Timeline in seconds for the imported table."
-    feature_descriptions["t"] = "Alias for the imported table timeline in seconds."
-
-    imported_feature_names: list[str] = []
-    for alias_idx, (safe_name, original_name, arr, _kind) in enumerate(numeric_columns, start=1):
-        features[safe_name] = arr
-        imported_feature_names.append(safe_name)
-        feature_descriptions[safe_name] = f"Imported numeric column '{original_name}'."
-        alias = f"input_{alias_idx}"
-        if alias not in features:
-            features[alias] = arr
-            feature_descriptions[alias] = f"Alias for imported column '{original_name}'."
-
-    matrix_names = [name for name in imported_feature_names if name != time_name]
-    if not matrix_names:
-        matrix_names = imported_feature_names[:]
-    matrix = np.column_stack([_normalize_feature(features[name], "zscore") for name in matrix_names])
-    if matrix.ndim != 2 or matrix.shape[0] != row_count:
-        raise ValueError("The imported table could not be converted into a stable numeric matrix.")
-
-    features["column_mean"] = np.mean(matrix, axis=1)
-    features["column_spread"] = np.std(matrix, axis=1)
-    features["magnitude"] = np.linalg.norm(matrix, axis=1)
-    diffs = np.diff(matrix, axis=0, prepend=matrix[:1])
-    features["delta_magnitude"] = np.linalg.norm(diffs, axis=1)
-    feature_descriptions["column_mean"] = "Mean value across imported numeric columns."
-    feature_descriptions["column_spread"] = "Standard deviation across imported numeric columns."
-    feature_descriptions["magnitude"] = "Row-wise magnitude across imported numeric columns."
-    feature_descriptions["delta_magnitude"] = "Row-to-row change magnitude across imported numeric columns."
-
-    pca_components = _pca_components(matrix, n_components=6)
-    for idx in range(pca_components.shape[1]):
-        key = f"pc{idx + 1}"
-        features[key] = pca_components[:, idx]
-        feature_descriptions[key] = f"Principal component {idx + 1} across imported numeric columns."
-
-    display_matrix = np.column_stack([_robust_minmax(features[name]) for name in matrix_names]).T.astype(np.float64, copy=False)
-    if display_matrix.shape[0] < 2:
-        display_matrix = np.vstack([display_matrix, display_matrix])
-    spectrogram_db = display_matrix
-
-    if display_matrix.shape[0] >= 12:
-        chroma = display_matrix[:12]
+    magnitude = np.linalg.norm(matrix, axis=1).astype(np.float32)
+    features["magnitude"] = magnitude
+    features["column_mean"] = np.mean(matrix, axis=1).astype(np.float32)
+    features["column_spread"] = np.std(matrix, axis=1).astype(np.float32)
+    features["delta_magnitude"] = np.abs(np.diff(magnitude, prepend=magnitude[:1])).astype(np.float32)
+    pcs = _principal_components(matrix, 3)
+    features["pc1"], features["pc2"], features["pc3"] = pcs[:, 0], pcs[:, 1], pcs[:, 2]
+    features["time"] = times
+    features["frame"] = np.arange(row_count, dtype=np.float32)
+    if duration > 0:
+        features["time_normalized"] = times / duration
     else:
-        chroma = np.zeros((12, display_matrix.shape[1]), dtype=np.float64)
-        chroma[: display_matrix.shape[0], :] = display_matrix
+        features["time_normalized"] = np.zeros(row_count, dtype=np.float32)
 
-    if display_matrix.shape[0] >= 13:
-        mfcc = display_matrix[:13]
-    else:
-        mfcc = np.zeros((13, display_matrix.shape[1]), dtype=np.float64)
-        mfcc[: display_matrix.shape[0], :] = display_matrix
+    panel = _normalize_panel(matrix.T)
+    chroma = np.zeros((12, row_count), dtype=np.float32)
+    mfcc = np.zeros((20, row_count), dtype=np.float32)
+    for index in range(12):
+        chroma[index] = panel[index % panel.shape[0]] if panel.shape[0] else 0.0
+    for index in range(20):
+        mfcc[index] = panel[index % panel.shape[0]] if panel.shape[0] else 0.0
 
-    spectrogram_freqs_hz = np.arange(spectrogram_db.shape[0], dtype=np.float64)
+    # Keep every built-in audio-oriented mapping usable for tables. These are
+    # explicitly compatibility aliases derived from imported numeric data, not
+    # claims that a table contains acoustic measurements.
+    energy = _normalize_panel(np.abs(magnitude))
+    spread = _normalize_panel(features["column_spread"])
+    change = _normalize_panel(features["delta_magnitude"])
+    mean_signal = _normalize_panel(np.abs(features["column_mean"]))
+    peak = max(float(np.max(energy)), 1e-6)
+    features.setdefault("rms", energy.astype(np.float32))
+    features.setdefault("rms_db", (20.0 * np.log10(np.clip(energy / peak, 1e-6, None))).astype(np.float32))
+    signs = np.signbit(features["column_mean"])
+    crossing = np.zeros(row_count, dtype=np.float32)
+    if row_count > 1:
+        crossing[1:] = (signs[1:] != signs[:-1]).astype(np.float32)
+    features.setdefault("zero_crossing_rate", crossing)
+    features.setdefault("spectral_centroid", (mean_signal * 20_000.0).astype(np.float32))
+    features.setdefault("spectral_bandwidth", (spread * 10_000.0).astype(np.float32))
+    features.setdefault("spectral_rolloff", (np.maximum(mean_signal, spread) * 22_000.0).astype(np.float32))
+    features.setdefault("spectral_flatness", spread.astype(np.float32))
+    features.setdefault("spectral_flux", change.astype(np.float32))
+    features.setdefault("onset_strength", change.astype(np.float32))
+    features.setdefault("dominant_frequency", (energy * 20_000.0).astype(np.float32))
+    features.setdefault("chroma_mean", np.mean(chroma, axis=0).astype(np.float32))
+    for index in range(chroma.shape[0]):
+        features.setdefault(f"chroma_{index + 1}", chroma[index].astype(np.float32))
+    for index in range(mfcc.shape[0]):
+        features.setdefault(f"mfcc_{index + 1}", mfcc[index].astype(np.float32))
+
+    descriptions.update(
+        {key: FEATURE_DESCRIPTIONS.get(key, key.replace("_", " ").title()) for key in features if key not in descriptions}
+    )
 
     return AnalysisResult(
-        source_path=str(source),
-        audio_path="",
-        sample_rate=1,
+        source_path=source,
+        source_kind="table",
+        times=times,
         duration=duration,
-        hop_length=1,
-        n_fft=max(1, spectrogram_db.shape[0]),
-        times=time_values,
         features=features,
-        spectrogram_db=spectrogram_db,
-        spectrogram_freqs_hz=spectrogram_freqs_hz,
+        sample_rate=0,
+        audio_path=None,
+        has_video=False,
+        spectrogram=panel,
+        spectrogram_frequencies=np.arange(panel.shape[0], dtype=np.float32),
         chromagram=chroma,
         mfcc=mfcc,
-        feature_descriptions=feature_descriptions,
-        source_kind="table",
+        waveform=features["column_mean"],
+        metadata={"rows": row_count, "numeric_columns": list(features.keys())[: matrix.shape[1]], "original_headers": list(headers)},
+        feature_descriptions=descriptions,
     )
 
 
-def ensure_wav_audio(
-    source_path: str | Path,
-    sample_rate: int = 22050,
-    temp_dir: str | Path | None = None,
-) -> str:
-    """Convert audio or video to a mono WAV file. Uses ffmpeg when available.
+# ---------------------------------------------------------------------------
+# Media analysis
 
-    For audio-only inputs, a failed ffmpeg conversion falls back to the original file.
-    For video inputs, ffmpeg is required.
+
+def _decode_audio(path: Path) -> tuple[np.ndarray, int]:
+    """Decode mono floating-point audio with SoundFile, then FFmpeg fallback.
+
+    SoundFile is fast for PCM/FLAC/Ogg sources and avoids a heavyweight feature
+    stack during startup. FFmpeg provides broad container/codec coverage and is
+    also the normal path for extracting audio from video.
     """
-    source = str(source_path)
-    temp_root = Path(temp_dir) if temp_dir else Path(tempfile.mkdtemp(prefix="metriq_visualizer_"))
-    temp_root.mkdir(parents=True, exist_ok=True)
-    output = temp_root / "analysis_audio.wav"
 
-    ffmpeg_path = shutil.which("ffmpeg")
-    if ffmpeg_path:
-        cmd = [
-            ffmpeg_path,
-            "-y",
-            "-i",
-            source,
-            "-ac",
-            "1",
-            "-ar",
-            str(sample_rate),
-            "-acodec",
-            "pcm_s16le",
-            str(output),
-        ]
-        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if proc.returncode == 0 and output.exists():
-            return str(output)
-        if is_video_file(source):
-            raise RuntimeError(
-                "ffmpeg could not extract audio from the video. "
-                f"stderr:\n{proc.stderr.decode(errors='ignore')}"
-            )
-
-    if is_video_file(source):
-        raise RuntimeError(
-            "ffmpeg is required to analyze video files on Linux. "
-            "Install it first, then retry."
-        )
-    return source
-
-
-def _clean_feature(values: np.ndarray | Iterable[float]) -> np.ndarray:
-    arr = np.asarray(values, dtype=np.float64).reshape(-1)
-    if arr.size == 0:
-        return arr
-    finite_mask = np.isfinite(arr)
-    if not finite_mask.any():
-        return np.zeros_like(arr)
-    fill = float(np.nanmedian(arr[finite_mask]))
-    arr = np.nan_to_num(arr, nan=fill, posinf=fill, neginf=fill)
-    return arr
-
-
-def _normalize_feature(arr: np.ndarray, mode: str) -> np.ndarray:
-    arr = _clean_feature(arr)
-    if mode == "raw":
-        return arr.copy()
-    if arr.size == 0:
-        return arr.copy()
-    if mode == "minmax":
-        low = float(np.min(arr))
-        high = float(np.max(arr))
-        span = high - low
-        if span < 1e-12:
-            return np.zeros_like(arr)
-        return (arr - low) / span
-    # default: zscore
-    mean = float(np.mean(arr))
-    std = float(np.std(arr))
-    if std < 1e-12:
-        return np.zeros_like(arr)
-    return (arr - mean) / std
-
-
-def _robust_minmax(arr: np.ndarray, low_pct: float = 2.0, high_pct: float = 98.0) -> np.ndarray:
-    arr = _clean_feature(arr)
-    if arr.size == 0:
-        return arr.copy()
-    low = float(np.percentile(arr, low_pct))
-    high = float(np.percentile(arr, high_pct))
-    span = high - low
-    if span < 1e-12:
-        return np.zeros_like(arr)
-    clipped = np.clip(arr, low, high)
-    return (clipped - low) / span
-
-
-def _moving_average(arr: np.ndarray, window: float | int) -> np.ndarray:
-    arr = _clean_feature(arr)
-    win = max(1, int(round(float(window))))
-    if win <= 1 or arr.size == 0:
-        return arr.copy()
-    kernel = np.ones(win, dtype=np.float64) / win
-    return np.convolve(arr, kernel, mode="same")
-
-
-ALLOWED_FUNCTIONS: dict[str, Callable[..., np.ndarray | float]] = {
-    "abs": np.abs,
-    "sqrt": np.sqrt,
-    "log1p": np.log1p,
-    "log": lambda x: np.log(np.maximum(_clean_feature(x), 1e-12)),
-    "exp": np.exp,
-    "clip": lambda x, lo, hi: np.clip(_clean_feature(x), lo, hi),
-    "smooth": _moving_average,
-    "mean": lambda *args: np.mean(np.vstack([_clean_feature(a) for a in args]), axis=0),
-    "avg": lambda *args: np.mean(np.vstack([_clean_feature(a) for a in args]), axis=0),
-    "sum": lambda *args: np.sum(np.vstack([_clean_feature(a) for a in args]), axis=0),
-    "max": lambda *args: np.max(np.vstack([_clean_feature(a) for a in args]), axis=0),
-    "min": lambda *args: np.min(np.vstack([_clean_feature(a) for a in args]), axis=0),
-}
-
-ALLOWED_CONSTANTS: dict[str, float] = {
-    "pi": math.pi,
-    "e": math.e,
-}
-
-
-class FormulaEvaluator(ast.NodeVisitor):
-    def __init__(self, feature_map: dict[str, np.ndarray], length: int):
-        self.feature_map = feature_map
-        self.length = length
-
-    def visit_Expression(self, node: ast.Expression):
-        return self.visit(node.body)
-
-    def visit_Name(self, node: ast.Name):
-        if node.id in self.feature_map:
-            return self.feature_map[node.id]
-        if node.id in ALLOWED_CONSTANTS:
-            return float(ALLOWED_CONSTANTS[node.id])
-        raise ValueError(f"Unknown feature or constant: {node.id}")
-
-    def visit_Constant(self, node: ast.Constant):
-        if isinstance(node.value, (int, float)):
-            return float(node.value)
-        raise ValueError("Only numeric constants are allowed in formulas.")
-
-    def visit_UnaryOp(self, node: ast.UnaryOp):
-        value = self.visit(node.operand)
-        if isinstance(node.op, ast.USub):
-            return -value
-        if isinstance(node.op, ast.UAdd):
-            return value
-        raise ValueError("Unsupported unary operator in formula.")
-
-    def visit_BinOp(self, node: ast.BinOp):
-        left = self.visit(node.left)
-        right = self.visit(node.right)
-        if isinstance(node.op, ast.Add):
-            return left + right
-        if isinstance(node.op, ast.Sub):
-            return left - right
-        if isinstance(node.op, ast.Mult):
-            return left * right
-        if isinstance(node.op, ast.Div):
-            return left / right
-        if isinstance(node.op, ast.Pow):
-            return left ** right
-        raise ValueError("Unsupported binary operator in formula.")
-
-    def visit_Call(self, node: ast.Call):
-        if not isinstance(node.func, ast.Name):
-            raise ValueError("Only direct function names are allowed in formulas.")
-        func_name = node.func.id
-        if func_name not in ALLOWED_FUNCTIONS:
-            raise ValueError(f"Unsupported function: {func_name}")
-        args = [self.visit(arg) for arg in node.args]
-        return ALLOWED_FUNCTIONS[func_name](*args)
-
-    def generic_visit(self, node: ast.AST):
-        raise ValueError(f"Unsupported syntax in formula: {type(node).__name__}")
-
-
-def evaluate_formula(expression: str, feature_map: dict[str, np.ndarray], length: int) -> np.ndarray:
-    expr = (expression or "").strip()
-    if not expr:
-        return np.zeros(length, dtype=np.float64)
     try:
-        tree = ast.parse(expr, mode="eval")
-        evaluator = FormulaEvaluator(feature_map, length)
-        result = evaluator.visit(tree)
-    except Exception as exc:  # noqa: BLE001
-        raise ValueError(f"Could not evaluate formula '{expression}': {exc}") from exc
+        import soundfile as sf
 
-    if np.isscalar(result):
-        return np.full(length, float(result), dtype=np.float64)
-    arr = _clean_feature(np.asarray(result, dtype=np.float64))
-    if arr.size != length:
-        raise ValueError(
-            f"Formula '{expression}' returned {arr.size} values but expected {length}."
-        )
-    return arr
+        samples, sample_rate = sf.read(str(path), dtype="float32", always_2d=False)
+        array = np.asarray(samples, dtype=np.float32)
+        if array.ndim > 1:
+            array = np.mean(array, axis=1, dtype=np.float32)
+        if array.size:
+            return array.reshape(-1), int(sample_rate)
+    except Exception:
+        pass
 
-
-def _stack_feature_matrix(feature_map: dict[str, np.ndarray], names: list[str]) -> np.ndarray:
-    cols = []
-    for name in names:
-        if name in feature_map:
-            cols.append(_normalize_feature(feature_map[name], "zscore"))
-    if not cols:
-        raise ValueError("No valid features were available for PCA.")
-    return np.column_stack(cols)
-
-
-def _compute_low_volume_active_mask(rms: np.ndarray, cutoff_db: float) -> np.ndarray:
-    values = np.asarray(rms, dtype=np.float64).reshape(-1)
-    if values.size == 0:
-        return np.zeros(0, dtype=bool)
-    cutoff_db = max(0.0, float(cutoff_db))
-    if cutoff_db <= 0.0:
-        return np.ones(values.size, dtype=bool)
-    peak = float(np.max(values))
-    if peak <= 1e-12:
-        return np.zeros(values.size, dtype=bool)
-
-    rms_db = 20.0 * np.log10(np.maximum(values, 1e-12) / peak)
-    active = rms_db >= -cutoff_db
-
-    if active.size >= 3:
-        expanded = active.copy()
-        expanded[1:] |= active[:-1]
-        expanded[:-1] |= active[1:]
-        active = expanded
-
-    return np.asarray(active, dtype=bool)
+    executable = shutil.which("ffmpeg")
+    if not executable:
+        raise RuntimeError("The source could not be decoded. Install FFmpeg for broad media support.")
+    sample_rate = 44_100
+    command = [
+        executable,
+        "-hide_banner",
+        "-loglevel", "error",
+        "-i", str(path),
+        "-vn",
+        "-ac", "1",
+        "-ar", str(sample_rate),
+        "-f", "f32le",
+        "pipe:1",
+    ]
+    process = subprocess.run(command, capture_output=True, check=False)  # noqa: S603
+    if process.returncode != 0 or not process.stdout:
+        details = process.stderr.decode("utf-8", errors="replace")[-2000:]
+        raise RuntimeError(f"The source has no decodable audio stream.\n{details}".strip())
+    return np.frombuffer(process.stdout, dtype="<f4").astype(np.float32, copy=True), sample_rate
 
 
-def _pca_components(matrix: np.ndarray, n_components: int = 6) -> np.ndarray:
-    x = np.asarray(matrix, dtype=np.float64)
-    if x.ndim != 2:
-        raise ValueError("PCA input matrix must be 2D.")
-    if x.shape[0] < 2 or x.shape[1] < 1:
-        return np.zeros((x.shape[0], 1), dtype=np.float64)
-    x_centered = x - x.mean(axis=0, keepdims=True)
-    _, _, vt = np.linalg.svd(x_centered, full_matrices=False)
-    comps = x_centered @ vt.T[:, : max(1, min(n_components, vt.shape[0]))]
-    return comps
+def _hz_to_mel(frequency: np.ndarray | float) -> np.ndarray:
+    values = np.asarray(frequency, dtype=np.float64)
+    return 2595.0 * np.log10(1.0 + np.maximum(values, 0.0) / 700.0)
+
+
+def _mel_to_hz(mel: np.ndarray | float) -> np.ndarray:
+    values = np.asarray(mel, dtype=np.float64)
+    return 700.0 * (np.power(10.0, values / 2595.0) - 1.0)
+
+
+def _mel_filterbank(
+    sample_rate: int,
+    n_fft: int,
+    n_mels: int = 96,
+    *,
+    min_frequency: float = 0.0,
+    max_frequency: float | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return a Slaney-normalized Mel bank for the requested frequency band."""
+
+    frequencies = np.fft.rfftfreq(n_fft, d=1.0 / float(sample_rate))
+    nyquist = sample_rate / 2.0
+    minimum = float(np.clip(min_frequency, 0.0, max(0.0, nyquist - 1.0)))
+    maximum = nyquist if max_frequency is None or max_frequency <= 0 else float(max_frequency)
+    maximum = float(np.clip(maximum, minimum + 1.0, nyquist))
+    mel_edges = np.linspace(_hz_to_mel(minimum), _hz_to_mel(maximum), n_mels + 2)
+    hz_edges = _mel_to_hz(mel_edges)
+    filters = np.zeros((n_mels, frequencies.size), dtype=np.float32)
+    for index in range(n_mels):
+        left, center, right = hz_edges[index : index + 3]
+        if center > left:
+            rising = (frequencies - left) / (center - left)
+            filters[index] = np.maximum(filters[index], np.clip(rising, 0.0, 1.0))
+        if right > center:
+            falling = (right - frequencies) / (right - center)
+            filters[index] = np.minimum(filters[index], np.clip(falling, 0.0, 1.0))
+    widths = np.maximum(hz_edges[2 : n_mels + 2] - hz_edges[:n_mels], 1e-12)
+    filters *= (2.0 / widths)[:, None].astype(np.float32)
+    centers = hz_edges[1:-1].astype(np.float32)
+    return filters, centers
+
+
+def _resample_audio(samples: np.ndarray, source_rate: int, target_rate: int) -> np.ndarray:
+    """Band-limited rational resampling without introducing a heavyweight DSP stack."""
+
+    source_rate = int(source_rate)
+    target_rate = int(target_rate)
+    signal = np.asarray(samples, dtype=np.float32).reshape(-1)
+    if source_rate <= 0 or target_rate <= 0 or source_rate == target_rate:
+        return signal
+    try:
+        from scipy.signal import resample_poly
+    except ImportError as exc:  # pragma: no cover - SciPy is a runtime requirement
+        raise RuntimeError("Sample-rate conversion requires SciPy.") from exc
+    divisor = gcd(source_rate, target_rate)
+    up = target_rate // divisor
+    down = source_rate // divisor
+    return np.asarray(resample_poly(signal, up, down), dtype=np.float32).reshape(-1)
+
+
+def _estimate_fundamental_frequency(
+    magnitude: np.ndarray,
+    frequencies: np.ndarray,
+    *,
+    min_frequency: float,
+    max_frequency: float,
+    harmonics: int = 5,
+) -> np.ndarray:
+    """Estimate frame fundamentals with bounded harmonic summation.
+
+    The calculation is intentionally local and chunked. It provides a useful
+    historical ``f0_hz`` mapping signal without adding the JIT-heavy analysis
+    stack that made earlier builds unpredictable on ordinary computers.
+    """
+
+    spectrum = np.asarray(magnitude, dtype=np.float32)
+    hz = np.asarray(frequencies, dtype=np.float64).reshape(-1)
+    frame_count = spectrum.shape[1] if spectrum.ndim == 2 else 0
+    output = np.zeros(frame_count, dtype=np.float32)
+    if frame_count == 0 or hz.size < 2 or spectrum.shape[0] != hz.size:
+        return output
+    resolution = float(np.median(np.diff(hz))) if hz.size > 1 else 1.0
+    minimum = max(float(min_frequency), max(20.0, resolution))
+    maximum = min(float(max_frequency), float(hz[-1]))
+    candidates = np.flatnonzero((hz >= minimum) & (hz <= maximum))
+    if candidates.size == 0:
+        return output
+    candidate_hz = hz[candidates]
+    harmonic_bins: list[tuple[np.ndarray, np.ndarray, float]] = []
+    for harmonic in range(2, max(2, int(harmonics)) + 1):
+        targets = candidate_hz * harmonic
+        bins = np.searchsorted(hz, targets, side="left")
+        valid = bins < hz.size
+        if np.any(valid):
+            harmonic_bins.append((np.flatnonzero(valid), bins[valid], 1.0 / math.sqrt(harmonic)))
+    chunk_size = 256
+    for offset in range(0, frame_count, chunk_size):
+        stop = min(frame_count, offset + chunk_size)
+        scores = spectrum[candidates, offset:stop].astype(np.float32, copy=True)
+        for rows, bins, weight in harmonic_bins:
+            scores[rows] += spectrum[bins, offset:stop] * np.float32(weight)
+        best = np.argmax(scores, axis=0)
+        selected = candidate_hz[best].astype(np.float32)
+        peak = np.max(spectrum[:, offset:stop], axis=0)
+        selected[peak <= 1e-10] = 0.0
+        output[offset:stop] = selected
+    return output
+
+
+def _bounded_stft(
+    samples: np.ndarray,
+    sample_rate: int,
+    *,
+    n_fft: int = 2048,
+    base_hop: int = 512,
+    max_frames: int = 8192,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
+    """Return magnitude, RMS, ZCR, times, and adaptive hop with bounded memory."""
+
+    signal = np.asarray(samples, dtype=np.float32).reshape(-1)
+    original_size = signal.size
+    if signal.size < n_fft:
+        signal = np.pad(signal, (0, n_fft - signal.size))
+    available = max(0, signal.size - n_fft)
+    hop = max(1, int(base_hop))
+    expected = 1 + available // hop
+    frequency_bins = n_fft // 2 + 1
+    # Keep the primary STFT matrix around 128 MiB even when a creator selects
+    # both a very large FFT and a very high frame ceiling.
+    memory_limited_frames = max(128, 33_000_000 // max(1, frequency_bins))
+    effective_max_frames = max(1, min(int(max_frames), memory_limited_frames))
+    if expected > effective_max_frames and effective_max_frames > 1:
+        hop = max(hop, int(math.ceil(available / (effective_max_frames - 1))))
+    starts = np.arange(0, available + 1, hop, dtype=np.int64)
+    if starts.size > effective_max_frames:
+        starts = starts[:effective_max_frames]
+    frame_count = max(1, int(starts.size))
+    magnitude = np.empty((frequency_bins, frame_count), dtype=np.float32)
+    rms = np.empty(frame_count, dtype=np.float32)
+    zcr = np.empty(frame_count, dtype=np.float32)
+    window = np.hanning(n_fft).astype(np.float32)
+    sliding = np.lib.stride_tricks.sliding_window_view(signal, n_fft)
+    chunk_size = 256
+    for offset in range(0, frame_count, chunk_size):
+        stop = min(frame_count, offset + chunk_size)
+        batch = np.asarray(sliding[starts[offset:stop]], dtype=np.float32)
+        rms[offset:stop] = np.sqrt(np.mean(np.square(batch, dtype=np.float32), axis=1) + 1e-20)
+        signs = np.signbit(batch)
+        zcr[offset:stop] = np.mean(signs[:, 1:] != signs[:, :-1], axis=1, dtype=np.float32)
+        spectrum = np.fft.rfft(batch * window[None, :], axis=1)
+        magnitude[:, offset:stop] = np.abs(spectrum).T.astype(np.float32)
+    centers = starts.astype(np.float64) + n_fft * 0.5
+    duration = original_size / float(sample_rate)
+    times = np.minimum(centers / float(sample_rate), duration).astype(np.float32)
+    return magnitude, rms, zcr, times, hop
+
+def _video_only_analysis(path: Path, settings: AnalysisSettings | None = None) -> AnalysisResult:
+    try:
+        import cv2
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("Video analysis requires OpenCV.") from exc
+    capture = cv2.VideoCapture(str(path))
+    if not capture.isOpened():
+        raise RuntimeError("The video could not be opened.")
+    fps = float(capture.get(cv2.CAP_PROP_FPS) or 30.0)
+    frame_total = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    duration = frame_total / fps if frame_total > 0 and fps > 0 else 0.0
+    requested = (settings or AnalysisSettings()).normalized()
+    target_frames = min(requested.max_frames, max(1, frame_total)) if frame_total else requested.max_frames
+    stride = max(1, int(math.ceil(frame_total / target_frames))) if frame_total else 1
+    values: dict[str, list[float]] = {
+        "brightness": [], "contrast": [], "saturation": [], "edge_density": [],
+        "motion": [], "red_mean": [], "green_mean": [], "blue_mean": [],
+    }
+    times: list[float] = []
+    previous: np.ndarray | None = None
+    frame_index = 0
+    try:
+        while True:
+            ok, frame = capture.read()
+            if not ok:
+                break
+            if frame_index % stride:
+                frame_index += 1
+                continue
+            reduced = cv2.resize(frame, (160, 90), interpolation=cv2.INTER_AREA)
+            gray = cv2.cvtColor(reduced, cv2.COLOR_BGR2GRAY)
+            hsv = cv2.cvtColor(reduced, cv2.COLOR_BGR2HSV)
+            edges = cv2.Canny(gray, 80, 160)
+            values["brightness"].append(float(np.mean(gray)))
+            values["contrast"].append(float(np.std(gray)))
+            values["saturation"].append(float(np.mean(hsv[:, :, 1])))
+            values["edge_density"].append(float(np.mean(edges > 0)))
+            values["motion"].append(float(np.mean(cv2.absdiff(gray, previous))) if previous is not None else 0.0)
+            b, g, r = np.mean(reduced, axis=(0, 1))
+            values["red_mean"].append(float(r))
+            values["green_mean"].append(float(g))
+            values["blue_mean"].append(float(b))
+            times.append(frame_index / max(1e-9, fps))
+            previous = gray
+            frame_index += 1
+            if len(times) >= target_frames:
+                break
+    finally:
+        capture.release()
+    if not times:
+        raise RuntimeError("No video frames could be decoded.")
+    time_array = np.asarray(times, dtype=np.float32)
+    feature_map = {name: np.asarray(series, dtype=np.float32) for name, series in values.items()}
+    matrix = np.column_stack(list(feature_map.values()))
+    pcs = _principal_components(matrix, 3)
+    feature_map.update({"pc1": pcs[:, 0], "pc2": pcs[:, 1], "pc3": pcs[:, 2]})
+    feature_map["time"] = time_array
+    feature_map["frame"] = np.arange(time_array.size, dtype=np.float32)
+    feature_map["time_normalized"] = time_array / max(duration, float(time_array[-1]), 1e-12)
+    feature_map["magnitude"] = np.linalg.norm(matrix, axis=1).astype(np.float32)
+    feature_map["column_mean"] = np.mean(matrix, axis=1).astype(np.float32)
+    feature_map["column_spread"] = np.std(matrix, axis=1).astype(np.float32)
+    feature_map["delta_magnitude"] = np.abs(
+        np.diff(feature_map["magnitude"], prepend=feature_map["magnitude"][:1])
+    ).astype(np.float32)
+    # Aliases keep audio-oriented presets useful on silent video.
+    feature_map["rms"] = _normalize_panel(feature_map["brightness"])
+    feature_map["rms_db"] = 20.0 * np.log10(np.clip(feature_map["rms"], 1e-6, None))
+    feature_map["spectral_flux"] = feature_map["motion"]
+    feature_map["onset_strength"] = feature_map["motion"]
+    feature_map["spectral_centroid"] = feature_map["brightness"]
+    feature_map["spectral_bandwidth"] = feature_map["contrast"]
+    feature_map["spectral_rolloff"] = feature_map["edge_density"] * 22_000.0
+    feature_map["spectral_flatness"] = _normalize_panel(feature_map["contrast"])
+    feature_map["zero_crossing_rate"] = feature_map["edge_density"]
+    feature_map["dominant_frequency"] = feature_map["edge_density"] * 20_000.0
+    feature_map["chroma_mean"] = feature_map["saturation"]
+    panel = _normalize_panel(matrix.T)
+    chroma = np.vstack([panel[index % panel.shape[0]] for index in range(12)]).astype(np.float32)
+    mfcc = np.vstack([panel[index % panel.shape[0]] for index in range(requested.mfcc_count)]).astype(np.float32)
+    for index in range(chroma.shape[0]):
+        feature_map[f"chroma_{index + 1}"] = chroma[index]
+    for index in range(mfcc.shape[0]):
+        feature_map[f"mfcc_{index + 1}"] = mfcc[index]
+    descriptions = {name: f"Video-derived {name.replace('_', ' ')}." for name in feature_map}
+    descriptions.update(FEATURE_DESCRIPTIONS)
+    return AnalysisResult(
+        source_path=path,
+        source_kind="video",
+        times=time_array,
+        duration=max(duration, float(time_array[-1])),
+        features=feature_map,
+        sample_rate=0,
+        audio_path=None,
+        has_video=True,
+        spectrogram=panel,
+        spectrogram_frequencies=np.arange(panel.shape[0], dtype=np.float32),
+        chromagram=chroma,
+        mfcc=mfcc,
+        waveform=feature_map["brightness"],
+        metadata={
+            "video_fps": fps,
+            "frame_count": frame_total,
+            "analysis_mode": "video-only",
+            "analysis_settings": requested.to_dict(),
+            "analysis_engine": ANALYSIS_ENGINE_VERSION,
+        },
+        feature_descriptions=descriptions,
+    )
 
 
 def analyze_media(
-    source_path: str | Path,
-    sample_rate: int = 22050,
-    n_fft: int = 2048,
-    hop_length: int = 256,
-    temp_dir: str | Path | None = None,
+    path: str | Path,
+    settings: AnalysisSettings | Mapping[str, Any] | None = None,
 ) -> AnalysisResult:
-    """Extract a dense audio feature set from an audio or video file."""
-    audio_path = ensure_wav_audio(source_path, sample_rate=sample_rate, temp_dir=temp_dir)
-    y, sr = librosa.load(audio_path, sr=sample_rate, mono=True)
-    if y.size == 0:
-        raise ValueError("The selected file did not contain a readable audio stream.")
+    """Analyze audio or a video's audio track with creator-controlled local DSP.
 
-    duration = float(len(y) / sr)
-    stft = librosa.stft(y=y, n_fft=n_fft, hop_length=hop_length)
-    magnitude = np.abs(stft)
-    spectrogram_db = librosa.amplitude_to_db(magnitude + 1e-12, ref=np.max)
-    spectrogram_freqs_hz = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
+    FFT size, hop, sample rate, frequency band, Mel count, MFCC count, and the
+    frame ceiling are all functional settings. Long sources still receive an
+    adaptive hop so analysis memory remains bounded on ordinary computers.
+    """
 
-    rms = librosa.feature.rms(S=magnitude, frame_length=n_fft)[0]
-    zcr = librosa.feature.zero_crossing_rate(y, frame_length=n_fft, hop_length=hop_length)[0]
-    centroid = librosa.feature.spectral_centroid(S=magnitude, sr=sr)[0]
-    bandwidth = librosa.feature.spectral_bandwidth(S=magnitude, sr=sr)[0]
-    rolloff = librosa.feature.spectral_rolloff(S=magnitude, sr=sr)[0]
-    flatness = librosa.feature.spectral_flatness(S=magnitude)[0]
-    contrast = librosa.feature.spectral_contrast(S=magnitude, sr=sr)
-    chroma = librosa.feature.chroma_stft(S=magnitude, sr=sr)
-    mfcc = librosa.feature.mfcc(S=librosa.power_to_db(magnitude**2 + 1e-12), sr=sr, n_mfcc=13)
-    onset_strength = librosa.onset.onset_strength(S=librosa.power_to_db(magnitude**2 + 1e-12), sr=sr)
-
-    # Spectral flux: frame-to-frame change in a column-normalized magnitude spectrum.
-    mag_norm = magnitude / np.maximum(np.linalg.norm(magnitude, axis=0, keepdims=True), 1e-12)
-    flux = np.sqrt(np.sum(np.diff(mag_norm, axis=1, prepend=mag_norm[:, :1]) ** 2, axis=0))
-
-    dominant_bins = np.argmax(magnitude, axis=0)
-    dominant_freq_hz = spectrogram_freqs_hz[dominant_bins]
-
-    chroma_prob = chroma / np.maximum(np.sum(chroma, axis=0, keepdims=True), 1e-12)
-    chroma_entropy = -np.sum(chroma_prob * np.log2(np.maximum(chroma_prob, 1e-12)), axis=0)
-    chroma_mean = np.mean(chroma, axis=0)
-    contrast_mean = np.mean(contrast, axis=0)
-
-    # Fundamental frequency estimate. Keep it permissive enough for broad audio content.
+    source = Path(path).expanduser().resolve()
+    if not source.is_file():
+        raise FileNotFoundError(source)
+    has_video = source.suffix.lower() in VIDEO_EXTENSIONS
+    requested = settings if isinstance(settings, AnalysisSettings) else AnalysisSettings.from_mapping(settings)
     try:
-        fmax = float(min(sr / 2 - 50, 12000))
-        f0_hz = librosa.yin(
-            y,
-            fmin=50,
-            fmax=max(200.0, fmax),
-            sr=sr,
-            frame_length=n_fft,
-            hop_length=hop_length,
-        )
-    except Exception:  # noqa: BLE001
-        f0_hz = np.zeros_like(rms)
+        samples, source_sample_rate = _decode_audio(source)
+    except RuntimeError:
+        if has_video:
+            return _video_only_analysis(source, requested)
+        raise
 
-    # Align everything to a single frame count.
-    frame_lengths = [
-        rms.size,
-        zcr.size,
-        centroid.size,
-        bandwidth.size,
-        rolloff.size,
-        flatness.size,
-        contrast.shape[1],
-        chroma.shape[1],
-        mfcc.shape[1],
-        onset_strength.size,
-        flux.size,
-        dominant_freq_hz.size,
-        chroma_entropy.size,
-        chroma_mean.size,
-        contrast_mean.size,
-        f0_hz.size,
-    ]
-    n_frames = int(min(frame_lengths))
-    if n_frames <= 1:
-        raise ValueError("The file is too short for stable analysis.")
+    samples = np.asarray(samples, dtype=np.float32).reshape(-1)
+    if samples.size < 16:
+        raise ValueError("The source is too short to analyze.")
+    source_sample_count = int(samples.size)
+    source_duration = float(source_sample_count / source_sample_rate)
+    configured = requested.normalized(native_sample_rate=source_sample_rate)
+    sample_rate = int(configured.sample_rate or source_sample_rate)
+    if sample_rate != source_sample_rate:
+        samples = _resample_audio(samples, source_sample_rate, sample_rate)
+    if samples.size < 16:
+        raise ValueError("The resampled source is too short to analyze.")
+    peak = float(np.max(np.abs(samples)))
+    if peak > 1.0:
+        samples = samples / peak
 
-    def cut(arr: np.ndarray) -> np.ndarray:
-        arr = np.asarray(arr)
-        if arr.ndim == 1:
-            return _clean_feature(arr[:n_frames])
-        return np.asarray(arr[:, :n_frames], dtype=np.float64)
+    n_fft = configured.n_fft
+    magnitude, rms, zcr, times, hop = _bounded_stft(
+        samples,
+        sample_rate,
+        n_fft=n_fft,
+        base_hop=configured.hop_length,
+        max_frames=configured.max_frames,
+    )
+    frame_count = magnitude.shape[1]
+    full_frequencies = np.fft.rfftfreq(n_fft, d=1.0 / float(sample_rate)).astype(np.float32)
+    nyquist = sample_rate / 2.0
+    minimum_frequency = float(np.clip(configured.min_frequency, 0.0, max(0.0, nyquist - 1.0)))
+    maximum_frequency = nyquist if configured.max_frequency <= 0 else float(configured.max_frequency)
+    maximum_frequency = float(np.clip(maximum_frequency, minimum_frequency + 1.0, nyquist))
+    band_mask = (full_frequencies >= minimum_frequency) & (full_frequencies <= maximum_frequency)
+    if not np.any(band_mask):
+        nearest = int(np.argmin(np.abs(full_frequencies - minimum_frequency)))
+        band_mask[nearest] = True
+    frequencies = full_frequencies[band_mask]
+    magnitude = np.ascontiguousarray(magnitude[band_mask], dtype=np.float32)
+    energy = np.maximum(np.sum(magnitude, axis=0), 1e-20)
 
-    rms = cut(rms)
-    peak_rms = float(np.max(rms)) if rms.size > 0 else 0.0
-    if peak_rms > 1e-12:
-        rms_db = 20.0 * np.log10(np.maximum(rms, 1e-12) / peak_rms)
-    else:
-        rms_db = np.full_like(rms, -120.0, dtype=np.float64)
-    zcr = cut(zcr)
-    centroid = cut(centroid)
-    bandwidth = cut(bandwidth)
-    rolloff = cut(rolloff)
-    flatness = cut(flatness)
-    contrast = cut(contrast)
-    chroma = cut(chroma)
-    mfcc = cut(mfcc)
-    onset_strength = cut(onset_strength)
-    flux = cut(flux)
-    dominant_freq_hz = cut(dominant_freq_hz)
-    chroma_entropy = cut(chroma_entropy)
-    chroma_mean = cut(chroma_mean)
-    contrast_mean = cut(contrast_mean)
-    f0_hz = cut(f0_hz)
+    centroid = np.sum(magnitude * frequencies[:, None], axis=0) / energy
+    second_moment = np.sum(magnitude * np.square(frequencies)[:, None], axis=0) / energy
+    bandwidth = np.sqrt(np.maximum(second_moment - np.square(centroid), 0.0))
+    dominant = frequencies[np.argmax(magnitude, axis=0)]
+    fundamental = _estimate_fundamental_frequency(
+        magnitude,
+        frequencies,
+        min_frequency=minimum_frequency,
+        max_frequency=maximum_frequency,
+    )
 
-    times = librosa.frames_to_time(np.arange(n_frames), sr=sr, hop_length=hop_length)
+    normalized_spectrum = magnitude / np.maximum(np.linalg.norm(magnitude, axis=0, keepdims=True), 1e-20)
+    spectral_delta = np.diff(normalized_spectrum, axis=1, prepend=normalized_spectrum[:, :1])
+    flux = np.sqrt(np.sum(np.square(spectral_delta, dtype=np.float32), axis=0))
+    onset = np.sum(np.maximum(spectral_delta, 0.0), axis=0)
+    del normalized_spectrum, spectral_delta
+
+    np.square(magnitude, out=magnitude)
+    power = magnitude
+    cumulative = np.cumsum(power, axis=0)
+    total_power = np.maximum(cumulative[-1], 1e-20)
+    rolloff_indices = np.argmax(cumulative >= (0.85 * total_power)[None, :], axis=0)
+    rolloff = frequencies[rolloff_indices]
+    del cumulative
+    flatness = np.exp(np.mean(np.log(power + 1e-20), axis=0)) / np.maximum(np.mean(power, axis=0), 1e-20)
+
+    chroma = np.zeros((12, frame_count), dtype=np.float32)
+    valid_bins = np.flatnonzero(frequencies > 0.0)
+    if valid_bins.size:
+        midi = np.rint(69.0 + 12.0 * np.log2(frequencies[valid_bins] / 440.0)).astype(np.int32)
+        pitch_classes = np.mod(midi, 12)
+        for pitch_class in range(12):
+            bins = valid_bins[pitch_classes == pitch_class]
+            if bins.size:
+                chroma[pitch_class] = np.sum(power[bins], axis=0)
+    chroma /= np.maximum(np.sum(chroma, axis=0, keepdims=True), 1e-20)
+
+    mel_filters, mel_centers = _mel_filterbank(
+        sample_rate,
+        n_fft,
+        configured.n_mels,
+        min_frequency=minimum_frequency,
+        max_frequency=maximum_frequency,
+    )
+    mel_filters = np.ascontiguousarray(mel_filters[:, band_mask], dtype=np.float32)
+    mel_power = np.empty((mel_filters.shape[0], frame_count), dtype=np.float32)
+    for offset in range(0, frame_count, 256):
+        stop = min(frame_count, offset + 256)
+        mel_power[:, offset:stop] = mel_filters @ power[:, offset:stop]
+    np.maximum(mel_power, 1e-20, out=mel_power)
+    del power, mel_filters
+    mel_reference = max(float(np.max(mel_power)), 1e-20)
+    mel_db = (10.0 * np.log10(mel_power / mel_reference)).astype(np.float32)
+    try:
+        from scipy.fft import dct
+    except ImportError as exc:  # pragma: no cover - SciPy is a runtime requirement
+        raise RuntimeError("Media analysis requires SciPy.") from exc
+    mfcc = dct(mel_db, type=2, axis=0, norm="ortho")[: configured.mfcc_count].astype(np.float32)
+    rms_db = (20.0 * np.log10(np.maximum(rms, 1e-12) / max(float(np.max(rms)), 1e-12))).astype(np.float32)
+    duration = max(source_duration, float(samples.size / sample_rate))
 
     features: dict[str, np.ndarray] = {
         "time": times,
-        "t": times,
-        "rms": rms,
-        "rms_db": rms_db,
-        "zcr": zcr,
-        "spectral_centroid_hz": centroid,
-        "spectral_bandwidth_hz": bandwidth,
-        "spectral_rolloff_hz": rolloff,
-        "spectral_flatness": flatness,
-        "spectral_flux": flux,
-        "spectral_contrast_mean": contrast_mean,
-        "dominant_freq_hz": dominant_freq_hz,
-        "onset_strength": onset_strength,
-        "chroma_mean": chroma_mean,
-        "chroma_entropy": chroma_entropy,
-        "f0_hz": f0_hz,
+        "frame": np.arange(frame_count, dtype=np.float32),
+        "time_normalized": times / max(duration, 1e-12),
+        "rms": _align_vector(rms, frame_count),
+        "rms_db": _align_vector(rms_db, frame_count),
+        "zero_crossing_rate": _align_vector(zcr, frame_count),
+        "spectral_centroid": _align_vector(centroid, frame_count),
+        "spectral_bandwidth": _align_vector(bandwidth, frame_count),
+        "spectral_rolloff": _align_vector(rolloff, frame_count),
+        "spectral_flatness": _align_vector(flatness, frame_count),
+        "spectral_flux": _align_vector(flux, frame_count),
+        "onset_strength": _align_vector(onset, frame_count),
+        "dominant_frequency": _align_vector(dominant, frame_count),
+        "fundamental_frequency": _align_vector(fundamental, frame_count),
+        "chroma_mean": _align_vector(np.mean(chroma, axis=0), frame_count),
     }
+    for index in range(chroma.shape[0]):
+        features[f"chroma_{index + 1}"] = _align_vector(chroma[index], frame_count)
+    for index in range(mfcc.shape[0]):
+        features[f"mfcc_{index + 1}"] = _align_vector(mfcc[index], frame_count)
 
-    feature_descriptions = dict(FEATURE_DESCRIPTIONS)
-
-    for idx, name in enumerate(PITCH_CLASS_NAMES):
-        key = f"chroma_{name}"
-        features[key] = chroma[idx]
-        feature_descriptions[key] = f"Chroma activity for pitch class {name}."
-
-    for idx in range(mfcc.shape[0]):
-        key = f"mfcc_{idx + 1}"
-        features[key] = mfcc[idx]
-        feature_descriptions[key] = f"MFCC coefficient {idx + 1}."
-
-    for idx in range(contrast.shape[0]):
-        key = f"contrast_{idx + 1}"
-        features[key] = contrast[idx]
-        feature_descriptions[key] = f"Spectral contrast band {idx + 1}."
-
-    pca_source_names = [
-        "rms",
-        "zcr",
-        "spectral_centroid_hz",
-        "spectral_bandwidth_hz",
-        "spectral_rolloff_hz",
-        "spectral_flatness",
-        "spectral_flux",
-        "spectral_contrast_mean",
-        "dominant_freq_hz",
-        "onset_strength",
-        "chroma_mean",
-        "chroma_entropy",
-        "f0_hz",
-        "rms_db",
-        *[f"mfcc_{i}" for i in range(1, 14)],
-        *[f"chroma_{name}" for name in PITCH_CLASS_NAMES],
+    pca_columns = [
+        features["rms"],
+        features["zero_crossing_rate"],
+        features["spectral_centroid"],
+        features["spectral_bandwidth"],
+        features["spectral_rolloff"],
+        features["spectral_flatness"],
+        features["spectral_flux"],
+        features["onset_strength"],
+        features["chroma_mean"],
     ]
-    pca_matrix = _stack_feature_matrix(features, pca_source_names)
-    pca_components = _pca_components(pca_matrix, n_components=6)
-    for idx in range(pca_components.shape[1]):
-        key = f"pc{idx + 1}"
-        features[key] = pca_components[:, idx]
-        feature_descriptions[key] = f"Principal component {idx + 1} across the core feature stack."
+    pca_columns.extend(features.get(f"mfcc_{index}", np.zeros(frame_count, dtype=np.float32)) for index in range(1, 8))
+    pca_inputs = np.column_stack(pca_columns)
+    magnitude_feature = np.linalg.norm(pca_inputs, axis=1).astype(np.float32)
+    features["magnitude"] = magnitude_feature
+    features["column_mean"] = np.mean(pca_inputs, axis=1).astype(np.float32)
+    features["column_spread"] = np.std(pca_inputs, axis=1).astype(np.float32)
+    features["delta_magnitude"] = np.abs(
+        np.diff(magnitude_feature, prepend=magnitude_feature[:1])
+    ).astype(np.float32)
+    pcs = _principal_components(pca_inputs, 3)
+    features["pc1"], features["pc2"], features["pc3"] = pcs[:, 0], pcs[:, 1], pcs[:, 2]
+
+    descriptions = dict(FEATURE_DESCRIPTIONS)
+    descriptions.update(
+        {f"mfcc_{index + 1}": f"Mel-frequency cepstral coefficient {index + 1}." for index in range(configured.mfcc_count)}
+    )
+    descriptions.update({f"chroma_{index + 1}": f"Pitch-class energy channel {index + 1}." for index in range(12)})
+
+    max_waveform = 240_000
+    if samples.size > max_waveform:
+        indices = np.linspace(0, samples.size - 1, max_waveform, dtype=np.int64)
+        waveform = samples[indices]
+    else:
+        waveform = samples
 
     return AnalysisResult(
-        source_path=str(source_path),
-        audio_path=str(audio_path),
-        sample_rate=sr,
-        duration=duration,
-        hop_length=hop_length,
-        n_fft=n_fft,
+        source_path=source,
+        source_kind="video" if has_video else "audio",
         times=times,
+        duration=duration,
         features=features,
-        spectrogram_db=spectrogram_db[:, :n_frames],
-        spectrogram_freqs_hz=spectrogram_freqs_hz,
-        chromagram=chroma,
-        mfcc=mfcc,
-        feature_descriptions=feature_descriptions,
-        source_kind="media",
+        sample_rate=sample_rate,
+        audio_path=source,
+        has_video=has_video,
+        spectrogram=_normalize_panel(mel_db),
+        spectrogram_frequencies=mel_centers,
+        chromagram=_normalize_panel(chroma),
+        mfcc=_normalize_panel(mfcc),
+        waveform=waveform.astype(np.float32),
+        metadata={
+            "sample_rate": sample_rate,
+            "source_sample_rate": int(source_sample_rate),
+            "samples": int(samples.size),
+            "source_samples": source_sample_count,
+            "analysis_frames": frame_count,
+            "max_analysis_frames": configured.max_frames,
+            "requested_hop_length": configured.hop_length,
+            "hop_length": hop,
+            "n_fft": n_fft,
+            "min_frequency": minimum_frequency,
+            "max_frequency": maximum_frequency,
+            "n_mels": configured.n_mels,
+            "mfcc_count": configured.mfcc_count,
+            "analysis_settings": configured.to_dict(),
+            "analysis_engine": ANALYSIS_ENGINE_VERSION,
+        },
+        feature_descriptions=descriptions,
     )
 
 
-def make_feature_map(result: AnalysisResult, normalize_mode: str = "zscore") -> dict[str, np.ndarray]:
-    fmap: dict[str, np.ndarray] = {}
-    for name, values in result.features.items():
-        if name in {"time", "t"}:
-            fmap[name] = _clean_feature(values)
-        else:
-            fmap[name] = _normalize_feature(values, normalize_mode)
-    return fmap
+# ---------------------------------------------------------------------------
+# Geometry construction
+
+
+def _normalize(values: np.ndarray, mode: str) -> np.ndarray:
+    array = _vector(values).astype(np.float64)
+    if array.size == 0:
+        return array.astype(np.float32)
+    if mode == "raw":
+        return np.clip(array, -1e6, 1e6).astype(np.float32)
+    if mode == "minmax":
+        low, high = np.percentile(array, [1.0, 99.0])
+        if high <= low + 1e-12:
+            return np.zeros(array.size, dtype=np.float32)
+        return (np.clip((array - low) / (high - low), 0.0, 1.0) * 2.0 - 1.0).astype(np.float32)
+    median = float(np.median(array))
+    q25, q75 = np.percentile(array, [25.0, 75.0])
+    scale = float((q75 - q25) / 1.349)
+    if scale <= 1e-12:
+        scale = float(np.std(array))
+    if scale <= 1e-12:
+        return np.zeros(array.size, dtype=np.float32)
+    return np.clip((array - median) / scale, -6.0, 6.0).astype(np.float32)
+
+
+def _color_map(values: np.ndarray, name: str) -> np.ndarray:
+    array = _vector(values)
+    if array.size == 0:
+        return np.empty((0, 4), dtype=np.float32)
+    lo, hi = np.percentile(array, [1.0, 99.0])
+    normalized = np.zeros_like(array) if hi <= lo + 1e-12 else np.clip((array - lo) / (hi - lo), 0.0, 1.0)
+    try:
+        from matplotlib import colormaps
+
+        cmap = colormaps.get_cmap(name)
+        rgba = np.asarray(cmap(normalized), dtype=np.float32)
+    except Exception:
+        rgba = np.column_stack((normalized, 0.3 + 0.7 * (1.0 - normalized), 0.8 * np.ones_like(normalized), np.ones_like(normalized)))
+    return rgba.astype(np.float32)
 
 
 def build_geometry(
-    result: AnalysisResult,
-    x_expression: str,
-    y_expression: str,
-    z_expression: str,
-    color_expression: str,
-    size_expression: str,
+    analysis: AnalysisResult,
+    x_formula: str,
+    y_formula: str,
+    z_formula: str,
+    color_formula: str,
+    size_formula: str,
+    *,
     normalize_mode: str = "zscore",
-    max_points: int = 2500,
+    max_points: int = 3000,
     low_volume_cutoff_db: float = 0.0,
     colormap: str = "plasma",
 ) -> GeometryResult:
-    length = result.times.size
-    feature_map = make_feature_map(result, normalize_mode=normalize_mode)
-
-    x_full = evaluate_formula(x_expression, feature_map, length)
-    y_full = evaluate_formula(y_expression, feature_map, length)
-    z_full = evaluate_formula(z_expression, feature_map, length)
-    color_full = evaluate_formula(color_expression, feature_map, length)
-    size_full = evaluate_formula(size_expression, feature_map, length)
-
-    active_mask_full = _compute_low_volume_active_mask(result.features.get("rms", np.ones(length, dtype=np.float64)), low_volume_cutoff_db)
-
-    if np.any(active_mask_full):
-        plot_source_indices = np.flatnonzero(active_mask_full)
-    else:
-        plot_source_indices = np.arange(length, dtype=int)
-
-    if max_points > 0 and plot_source_indices.size > max_points:
-        keep = np.linspace(0, plot_source_indices.size - 1, num=max_points, dtype=int)
-        plot_indices = plot_source_indices[keep]
-    else:
-        plot_indices = plot_source_indices
-
-    x_plot = x_full[plot_indices]
-    y_plot = y_full[plot_indices]
-    z_plot = z_full[plot_indices]
-    color_plot = color_full[plot_indices]
-    display_sizes_full = 10.0 + 50.0 * _robust_minmax(np.abs(size_full))
-    size_plot = display_sizes_full[plot_indices]
-    times_plot = result.times[plot_indices]
-
-    labels = {
-        "x": x_expression.strip() or "0",
-        "y": y_expression.strip() or "0",
-        "z": z_expression.strip() or "0",
-        "color": color_expression.strip() or "0",
-        "size": size_expression.strip() or "0",
+    length = int(analysis.times.size)
+    if length <= 0:
+        raise ValueError("The analysis contains no frames.")
+    formulas = {
+        "x": str(x_formula), "y": str(y_formula), "z": str(z_formula),
+        "color": str(color_formula), "size": str(size_formula),
     }
+    raw = {key: evaluate_formula(expression, analysis.features, length) for key, expression in formulas.items()}
+    valid = np.ones(length, dtype=bool)
+    for values in raw.values():
+        valid &= np.isfinite(values)
+    if low_volume_cutoff_db > 0:
+        if "rms_db" in analysis.features:
+            level_db = _align_vector(analysis.features["rms_db"], length)
+        elif "rms" in analysis.features:
+            rms = _align_vector(analysis.features["rms"], length)
+            level_db = 20.0 * np.log10(np.clip(rms, 1e-12, None) / max(float(np.max(rms)), 1e-12))
+        else:
+            level_db = np.zeros(length, dtype=np.float32)
+        valid &= level_db >= -float(low_volume_cutoff_db)
+    source_indices = np.flatnonzero(valid)
+    if source_indices.size == 0:
+        raise ValueError("No frames remain after filtering. Reduce the low-volume cutoff or change the formulas.")
 
+    x_full = _normalize(raw["x"][valid], normalize_mode)
+    y_full = _normalize(raw["y"][valid], normalize_mode)
+    z_full = _normalize(raw["z"][valid], normalize_mode)
+    color_full = raw["color"][valid].astype(np.float32)
+    size_raw = np.abs(raw["size"][valid].astype(np.float64))
+    size_lo, size_hi = np.percentile(size_raw, [5.0, 95.0])
+    if size_hi <= size_lo + 1e-12:
+        size_full = np.ones(size_raw.size, dtype=np.float32)
+    else:
+        size_full = (0.25 + 1.75 * np.clip((size_raw - size_lo) / (size_hi - size_lo), 0.0, 1.0)).astype(np.float32)
+    times_full = analysis.times[valid].astype(np.float32)
+    rgba_full = _color_map(color_full, colormap)
+
+    target = max(1, min(int(max_points), source_indices.size))
+    if target < source_indices.size:
+        plot_positions = np.unique(np.linspace(0, source_indices.size - 1, target, dtype=np.int64))
+    else:
+        plot_positions = np.arange(source_indices.size, dtype=np.int64)
     return GeometryResult(
         x_full=x_full,
         y_full=y_full,
         z_full=z_full,
         color_full=color_full,
         size_full=size_full,
-        size_display_full=display_sizes_full,
-        times_full=result.times,
-        x_plot=x_plot,
-        y_plot=y_plot,
-        z_plot=z_plot,
-        color_plot=color_plot,
-        size_plot=size_plot,
-        times_plot=times_plot,
-        plot_indices=plot_indices,
-        labels=labels,
-        normalize_mode=normalize_mode,
-        colormap=colormap,
-        active_mask_full=active_mask_full,
-        low_volume_cutoff_db=float(low_volume_cutoff_db),
+        times_full=times_full,
+        rgba_full=rgba_full,
+        source_indices_full=source_indices,
+        x_plot=x_full[plot_positions],
+        y_plot=y_full[plot_positions],
+        z_plot=z_full[plot_positions],
+        color_plot=color_full[plot_positions],
+        size_plot=size_full[plot_positions],
+        times_plot=times_full[plot_positions],
+        rgba_plot=rgba_full[plot_positions],
+        source_indices_plot=source_indices[plot_positions],
+        formulas=formulas,
+        normalize_mode=str(normalize_mode),
+        colormap=str(colormap),
     )
 
 
-def nearest_time_index(times: np.ndarray, target_time: float) -> int:
-    if times.size == 0:
-        return 0
-    idx = int(np.searchsorted(times, target_time))
-    if idx <= 0:
-        return 0
-    if idx >= times.size:
-        return int(times.size - 1)
-    prev_idx = idx - 1
-    return idx if abs(times[idx] - target_time) < abs(times[prev_idx] - target_time) else prev_idx
-
-
-def format_feature_reference(result: AnalysisResult) -> str:
-    ordered_names = sorted(result.features.keys())
+def format_feature_reference(analysis: AnalysisResult) -> str:
     lines = [
-        "Available features (use them directly in formulas):",
-        "",
+        f"Source: {analysis.source_path}",
+        f"Kind: {analysis.source_kind}",
+        f"Duration: {analysis.duration:.3f} seconds",
+        f"Analysis frames: {analysis.times.size:,}",
     ]
-    for name in ordered_names:
-        desc = result.feature_descriptions.get(name, "")
-        lines.append(f"- {name}: {desc}")
-
-    if getattr(result, "source_kind", "media") == "table":
-        lines.extend(
-            [
-                "",
-                "Formula examples for imported tables:",
-                "- pc1",
-                "- input_1",
-                "- mean(input_1, input_2)",
-                "- smooth(column_mean, 5)",
-                "- delta_magnitude",
-                "- log1p(abs(magnitude))",
-                "",
-                "Supported functions: abs, sqrt, log, log1p, exp, clip, smooth, mean, avg, sum, max, min",
-                "Normalization mode applies to every feature except time/t.",
-            ]
-        )
-        return "\n".join(lines)
-
+    if analysis.sample_rate:
+        lines.append(f"Sample rate: {analysis.sample_rate:,} Hz")
+    lines.extend(["", "Formula-ready features", "----------------------"])
+    for name in sorted(analysis.features):
+        values = analysis.features[name]
+        description = analysis.feature_descriptions.get(name) or FEATURE_DESCRIPTIONS.get(name) or name.replace("_", " ").title()
+        if values.size:
+            lines.append(f"{name:<28} {description}  [min {float(np.min(values)):.4g}, max {float(np.max(values)):.4g}]")
+        else:
+            lines.append(f"{name:<28} {description}")
     lines.extend(
         [
             "",
-            "Formula examples:",
-            "- pc1",
-            "- 0.7*mfcc_1 + 0.3*chroma_mean",
-            "- mean(chroma_C, chroma_G, chroma_E)",
-            "- smooth(spectral_flux, 5)",
-            "- log1p(abs(f0_hz))",
-            "- 0.5*rms + 0.5*onset_strength",
-            "",
-            "Supported functions: abs, sqrt, log, log1p, exp, clip, smooth, mean, avg, sum, max, min",
-            "Normalization mode applies to every feature except time/t.",
+            "Operators: +  -  *  /  **  %",
+            "Functions: abs, sqrt, log, log1p, exp, clip, smooth, mean, avg, sum, max, min",
+            "Examples: smooth(spectral_flux, 5) · 0.7*mfcc_1 + 0.3*chroma_mean",
         ]
     )
     return "\n".join(lines)
+
+
+__all__ = [
+    "AnalysisResult",
+    "AnalysisSettings",
+    "AUDIO_EXTENSIONS",
+    "DEFAULT_PRESETS",
+    "FEATURE_DESCRIPTIONS",
+    "FormulaError",
+    "GeometryResult",
+    "TABLE_EXTENSIONS",
+    "VIDEO_EXTENSIONS",
+    "analysis_from_table_file",
+    "analyze_media",
+    "build_geometry",
+    "evaluate_formula",
+    "format_feature_reference",
+    "is_table_file",
+]

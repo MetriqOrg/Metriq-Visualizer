@@ -1,96 +1,101 @@
 # Copyright (c) Metriq Foundation, Inc.
 # This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
-# If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
+"""Portable Metriq Visualizer project persistence."""
 
 from __future__ import annotations
 
 import json
-import shutil
+import os
+from collections.abc import Mapping
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-PROJECT_SCHEMA_VERSION = 3
-PROJECT_FORMAT = "mvproj"
+from metriq_visualizer_atomic import atomic_write_text
+
 PROJECT_EXTENSION = ".mvproj"
 LEGACY_PROJECT_EXTENSIONS = (".bgl",)
-PROJECT_EXTENSIONS = (PROJECT_EXTENSION,) + LEGACY_PROJECT_EXTENSIONS
-BACKUP_SUFFIX = ".bak"
+PROJECT_SCHEMA = "metriq.visualizer-project"
+PROJECT_SCHEMA_VERSION = 2
 
 
-def _resolve_source_path(project_path: Path, session: dict[str, Any]) -> dict[str, Any]:
-    session = dict(session or {})
-    rel = session.get("file_path_relative")
-    abs_path = session.get("file_path")
-    candidates: list[Path] = []
-    if isinstance(rel, str) and rel.strip():
-        candidates.append((project_path.parent / rel).expanduser())
-    if isinstance(abs_path, str) and abs_path.strip():
-        candidates.append(Path(abs_path).expanduser())
-    for candidate in candidates:
-        try:
-            if candidate.exists():
-                session["file_path"] = str(candidate.resolve())
-                return session
-        except Exception:
-            continue
-    return session
+def _json_write_atomic(path: Path, payload: Mapping[str, Any]) -> None:
+    atomic_write_text(
+        path,
+        json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+    )
 
 
-def build_project_payload(project_name: str, state_payload: dict[str, Any], project_path: str | Path | None = None) -> dict[str, Any]:
-    payload = {
-        "format": PROJECT_FORMAT,
-        "project_name": str(project_name or "Untitled project").strip() or "Untitled project",
-        "project_schema_version": PROJECT_SCHEMA_VERSION,
-        "saved_at_utc": datetime.now(timezone.utc).isoformat(),
-        "state": dict(state_payload),
-    }
-    if project_path is not None:
-        project_file = Path(project_path).expanduser()
-        session = dict(payload["state"].get("session") or {})
-        source_path = session.get("file_path")
-        if isinstance(source_path, str) and source_path.strip():
-            try:
-                source = Path(source_path).expanduser().resolve()
-                session["file_path"] = str(source)
-                session["file_path_relative"] = str(source.relative_to(project_file.parent.resolve()))
-            except Exception:
+def build_project_payload(name: str, state: Mapping[str, Any], *, project_path: str | Path | None = None) -> dict[str, Any]:
+    clean_state = deepcopy(dict(state))
+    relative_source = ""
+    if project_path:
+        project = Path(project_path).expanduser().resolve()
+        session = clean_state.get("session")
+        if isinstance(session, dict):
+            source_text = str(session.get("file_path", "")).strip()
+            if source_text:
+                source = Path(source_text).expanduser().resolve()
                 try:
-                    source = Path(source_path).expanduser().resolve()
-                    session["file_path"] = str(source)
-                except Exception:
-                    pass
-            payload["state"]["session"] = session
-    return payload
+                    # ``relative_to`` only works for descendants. ``relpath``
+                    # also preserves sibling layouts such as ../media/source.wav.
+                    relative_source = os.path.relpath(source, project.parent)
+                except ValueError:
+                    # Different Windows drives cannot be represented as one
+                    # relative path; retain the absolute session path instead.
+                    relative_source = ""
+    return {
+        "schema": PROJECT_SCHEMA,
+        "schema_version": PROJECT_SCHEMA_VERSION,
+        "name": str(name or "Metriq Visualizer Project").strip(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "relative_source": relative_source,
+        "state": clean_state,
+    }
 
 
-def save_project(path: str | Path, payload: dict[str, Any]) -> Path:
-    path = Path(path).expanduser()
-    if path.suffix.lower() != PROJECT_EXTENSION:
-        path = path.with_suffix(PROJECT_EXTENSION)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    if path.exists():
-        backup_path = path.with_suffix(path.suffix + BACKUP_SUFFIX)
-        try:
-            shutil.copy2(path, backup_path)
-        except Exception:
-            pass
-
-    tmp_path = path.with_suffix(path.suffix + ".tmp")
-    with tmp_path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=2, sort_keys=True)
-    tmp_path.replace(path)
-    return path
+def save_project(path: str | Path, payload: Mapping[str, Any]) -> Path:
+    output = Path(path).expanduser()
+    if output.suffix.lower() != PROJECT_EXTENSION:
+        output = output.with_suffix(PROJECT_EXTENSION)
+    _json_write_atomic(output, payload)
+    return output.resolve()
 
 
 def load_project(path: str | Path) -> dict[str, Any]:
-    path = Path(path).expanduser()
-    with path.open("r", encoding="utf-8") as handle:
-        payload = json.load(handle)
-    state = dict(payload.get("state") or {})
-    session = _resolve_source_path(path, state.get("session") or {})
-    state["session"] = session
-    payload["state"] = state
-    payload["project_path"] = str(path.resolve())
-    return payload
+    source = Path(path).expanduser().resolve()
+    payload = json.loads(source.read_text(encoding="utf-8-sig"))
+    if not isinstance(payload, Mapping):
+        raise ValueError("Project file must contain a JSON object.")
+    schema = str(payload.get("schema", ""))
+    if schema and schema != PROJECT_SCHEMA:
+        raise ValueError("This JSON file is not a Metriq Visualizer project.")
+    version = int(payload.get("schema_version", 1))
+    if version > PROJECT_SCHEMA_VERSION:
+        raise ValueError(f"Project schema {version} is newer than this application supports.")
+    state = payload.get("state", payload if source.suffix.lower() in LEGACY_PROJECT_EXTENSIONS else None)
+    if not isinstance(state, Mapping):
+        raise ValueError("Project state is missing or invalid.")
+    result = dict(payload)
+    result["state"] = deepcopy(dict(state))
+
+    # Resolve a portable source reference before falling back to an absolute path.
+    relative = str(payload.get("relative_source", "")).strip()
+    session = result["state"].get("session")
+    if isinstance(session, dict) and relative:
+        candidate = Path(relative).expanduser() if relative.startswith("~") else (source.parent / relative)
+        if candidate.exists():
+            session["file_path"] = str(candidate.resolve())
+    return result
+
+
+__all__ = [
+    "LEGACY_PROJECT_EXTENSIONS",
+    "PROJECT_EXTENSION",
+    "PROJECT_SCHEMA",
+    "PROJECT_SCHEMA_VERSION",
+    "build_project_payload",
+    "load_project",
+    "save_project",
+]

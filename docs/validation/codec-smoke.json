@@ -1,0 +1,137 @@
+{
+  "additional_checks": {
+    "odd_dimension_gif": {
+      "probed_height": 163,
+      "probed_width": 161,
+      "requested_height": 163,
+      "requested_width": 161,
+      "status": "passed"
+    }
+  },
+  "environment_limits": {
+    "hardware_video_encoders_exposed": false,
+    "software_h264_h265_used": true
+  },
+  "formats": {
+    "gif": {
+      "bytes": 36220,
+      "duration_seconds": 0.6,
+      "height": 160,
+      "pixel_format": "bgra",
+      "status": "passed",
+      "video_codec": "gif",
+      "width": 160
+    },
+    "jpeg_sequence": {
+      "first_frame_dimensions": [
+        161,
+        163
+      ],
+      "first_frame_mode": "RGB",
+      "frame_count": 3,
+      "manifest": {
+        "format": "jpeg_sequence",
+        "fps": 5.0,
+        "frame_count": 3,
+        "height": 163,
+        "pattern": "frame_%06d.jpg",
+        "schema": "metriq.image-sequence",
+        "schema_version": 1,
+        "start_time": 0.0,
+        "width": 161
+      },
+      "status": "passed"
+    },
+    "mov_prores422": {
+      "audio_channels": 1,
+      "audio_codec": "pcm_s16le",
+      "audio_sample_rate": 22050,
+      "bytes": 49369,
+      "duration_seconds": 0.6,
+      "height": 160,
+      "pixel_format": "yuv422p10le",
+      "status": "passed",
+      "video_codec": "prores",
+      "width": 160
+    },
+    "mov_prores4444": {
+      "audio_channels": 1,
+      "audio_codec": "pcm_s16le",
+      "audio_sample_rate": 22050,
+      "bytes": 60282,
+      "duration_seconds": 0.6,
+      "height": 160,
+      "pixel_format": "yuva444p12le",
+      "status": "passed",
+      "video_codec": "prores",
+      "width": 160
+    },
+    "mp4_h264": {
+      "audio_channels": 1,
+      "audio_codec": "aac",
+      "audio_sample_rate": 22050,
+      "bytes": 8497,
+      "duration_seconds": 0.6,
+      "height": 160,
+      "pixel_format": "yuv420p",
+      "status": "passed",
+      "video_codec": "h264",
+      "width": 160
+    },
+    "mp4_h265": {
+      "audio_channels": 1,
+      "audio_codec": "aac",
+      "audio_sample_rate": 22050,
+      "bytes": 10093,
+      "duration_seconds": 0.6,
+      "height": 160,
+      "pixel_format": "yuv420p",
+      "status": "passed",
+      "video_codec": "hevc",
+      "width": 160
+    },
+    "png_sequence": {
+      "first_frame_dimensions": [
+        161,
+        163
+      ],
+      "first_frame_mode": "RGBA",
+      "frame_count": 3,
+      "manifest": {
+        "format": "png_sequence",
+        "fps": 5.0,
+        "frame_count": 3,
+        "height": 163,
+        "pattern": "frame_%06d.png",
+        "schema": "metriq.image-sequence",
+        "schema_version": 1,
+        "start_time": 0.0,
+        "width": 161
+      },
+      "status": "passed"
+    },
+    "webm_vp9": {
+      "audio_channels": 1,
+      "audio_codec": "opus",
+      "audio_sample_rate": 48000,
+      "bytes": 19376,
+      "duration_seconds": 0.608,
+      "height": 160,
+      "pixel_format": "yuv420p",
+      "status": "passed",
+      "video_codec": "vp9",
+      "width": 160
+    }
+  },
+  "generated_at": "2026-07-13T04:39:56.441841+00:00",
+  "schema": "metriq.validation.codec-smoke",
+  "schema_version": 5,
+  "source": {
+    "description": "synthetic RGBA frames and 440 Hz PCM WAV streamed through the v1.12.5 release export pipeline",
+    "export_seconds": 0.6,
+    "fps": 5,
+    "frames": 3,
+    "height": 160,
+    "width": 160
+  }
+}

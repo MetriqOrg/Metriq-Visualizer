@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "metriq-visualizer"
+version = "1.12.5"
+description = "Local multidimensional media and data visualizer for creators, educators, and light scientific work"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MPL-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Metriq Foundation, Inc." }]
+keywords = ["audio", "visualization", "spectrogram", "education", "creator", "data"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: X11 Applications :: Qt",
+  "Intended Audience :: Education",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Multimedia :: Graphics",
+  "Topic :: Multimedia :: Sound/Audio :: Analysis",
+]
+dependencies = [
+  "numpy>=1.24",
+  "scipy>=1.10",
+  "matplotlib>=3.8",
+  "Pillow>=10.2",
+  "opencv-python>=4.9",
+  "PySide6>=6.6",
+  "soundfile>=0.12",
+  "sounddevice>=0.5.1",
+  "openpyxl>=3.1",
+]
+
+[project.scripts]
+metriq-visualizer = "metriq_visualizer_app:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6", "pyinstaller>=6.8"]
+
+[tool.setuptools]
+py-modules = [
+  "metriq_visualizer_app",
+  "metriq_visualizer_atomic",
+  "metriq_visualizer_cache",
+  "metriq_visualizer_3d",
+  "metriq_visualizer_core",
+  "metriq_visualizer_data_export",
+  "metriq_visualizer_export_pipeline",
+  "metriq_visualizer_export_presets",
+  "metriq_visualizer_export_studio",
+  "metriq_visualizer_layout",
+  "metriq_visualizer_live",
+  "metriq_visualizer_panels",
+  "metriq_visualizer_performance",
+  "metriq_visualizer_preset_files",
+  "metriq_visualizer_projects",
+  "metriq_visualizer_realtime",
+  "metriq_visualizer_render",
+  "metriq_visualizer_theme",
+  "metriq_visualizer_visuals",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+exclude = ["build-out", "dist", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
