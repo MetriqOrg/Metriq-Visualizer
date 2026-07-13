@@ -107,10 +107,13 @@ class AdaptivePreviewController:
 PERFORMANCE_PROFILES: dict[str, PerformanceProfile] = {
     "Fast preview": PerformanceProfile(
         name="Fast preview",
-        description="Lowest latency: bounded spline detail and motion accents, without tubes, labels, colorbar, or ghost path.",
+        description="Lowest latency: visible, bounded spline detail and motion accents, without tubes, labels, colorbar, or ghost path.",
         target_fps=15,
         point_budget=650,
-        curve_detail_cap=2,
+        # Two samples make a Catmull-Rom path read as the original straight
+        # point-to-point segments.  Three preserves the fast preview budget
+        # while giving every bend a visibly rounded midpoint.
+        curve_detail_cap=3,
         tube_sides_cap=5,
         allow_labels=False,
         allow_colorbar=False,

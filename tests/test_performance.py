@@ -44,7 +44,7 @@ class PerformanceProfileTests(unittest.TestCase):
         self.assertIsNot(live, options)
         self.assertEqual(live.render_mode, "Points + line")
         self.assertEqual(live.path_curve_mode, "Smooth spline")
-        self.assertEqual(live.curve_detail, 2)
+        self.assertEqual(live.curve_detail, 3)
         self.assertEqual(live.point_label_mode, "Off")
         self.assertFalse(live.show_colorbar)
         self.assertFalse(live.ghost_path)
