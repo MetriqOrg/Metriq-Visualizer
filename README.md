@@ -1,14 +1,14 @@
 ![Metriq Visualizer Banner](assets/metriq_logo_color.png)
 
-# Metriq Visualizer v1.12.7
+# Metriq Visualizer v1.12.8
 
 Metriq Visualizer is an open-source, local-first **interactive 3D media and data visualizer** for creators, educators, students, field observers, and light scientific work. It maps audio, video, CSV, TSV, TXT, and XLSX sources into formula-driven three-dimensional geometry, synchronized analysis panels, reusable projects, and finished video or image exports.
 
-Version 1.12.7 keeps the restored original visualizer workspace, configurable second-screen Stage Output, and verified GitHub release updates while hardening cross-platform release builds.
+Version 1.12.8 keeps the restored original visualizer workspace, configurable second-screen Stage Output, and verified GitHub release updates while hardening cross-platform release builds.
 
 ![Metriq Visualizer workspace](docs/images/main-workspace-v1125.png)
 
-## 1.12.7: verified updates, stage output, and release hardening
+## 1.12.8: verified updates, stage output, and release hardening
 
 - **Stable camera control:** autorotation uses an independent wall clock, mouse orbit uses bounded logical-pixel deltas, and zoom transforms the complete coordinate field—including grid and axes—instead of scaling only the data artists.
 - **Visible live effects:** spline smoothing and motion accents remain available in ordinary preview profiles; expensive tube meshes may still use a centerline proxy during motion.
@@ -178,7 +178,7 @@ sudo apt update
 sudo apt install ffmpeg python3 python3-pip python3-venv \
   libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 libpulse0 libportaudio2
 
-cd Metriq-Visualizer-v1.12.7
+cd Metriq-Visualizer-v1.12.8
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip

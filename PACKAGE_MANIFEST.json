@@ -1,11 +1,11 @@
 {
   "schema": "metriq.complete-source-manifest",
   "schema_version": 1,
-  "version": "1.12.6",
-  "generated_at": "2026-07-13T19:15:00+00:00",
+  "version": "1.12.8",
+  "generated_at": "2026-07-13T19:28:00+00:00",
   "self_included": false,
   "file_count": 96,
-  "total_bytes": 2820567,
+  "total_bytes": 2820801,
   "files": [
     {
       "path": ".gitattributes",
@@ -23,7 +23,7 @@
       "path": ".github/workflows/quality.yml",
       "bytes": 1558,
       "mode": "0644",
-      "sha256": "def1b161db79720a4cbb685ec24a1fe348f9e0a67380d2813a6b154881e6d4b8"
+      "sha256": "4b4a1b6d83e4b17e8e07982ebea9bb83985fb9acc457d649c1ef5414fdd106e9"
     },
     {
       "path": ".gitignore",
@@ -33,21 +33,21 @@
     },
     {
       "path": "CHANGELOG.md",
-      "bytes": 11199,
+      "bytes": 11397,
       "mode": "0644",
-      "sha256": "ae6fb804b7bf4ee1c1ea03c66b81df0781c4514c8b7b5d2c2c7436f9c1369bcf"
+      "sha256": "6c3c5265f883a76d5fa94490791b3413d8f93e452e5541d2d9c8a4de45eb6042"
     },
     {
       "path": "CODEX_IMPORT.md",
       "bytes": 2104,
       "mode": "0644",
-      "sha256": "c351a948545b412ce289d326d3aa498b4f5f0f82173c943d733b077946abc0ef"
+      "sha256": "3729f8fea697de7dcb049e61f00e221034ea76892b53fbee961dd7a895c74717"
     },
     {
       "path": "CODEX_PROMPT.txt",
       "bytes": 1934,
       "mode": "0644",
-      "sha256": "70f6088f0ec80b2927e62351cc6c89b701830cdea91cb825f2ac748a8cd0e301"
+      "sha256": "05816ec5d68f0084f2e9a70a014306d05dfcb57f0ba62e152a570f6e30d58848"
     },
     {
       "path": "LICENSE",
@@ -65,7 +65,7 @@
       "path": "README.md",
       "bytes": 14970,
       "mode": "0644",
-      "sha256": "d7682f05e6dd26a1f64b10793a323004f3cc52ca8c484015da431f1c5931b98f"
+      "sha256": "2f4c44f559a87bed2702fc1f5dc18b1028782ad04c8b4d06870d2ce156876591"
     },
     {
       "path": "TRADEMARKS.md",
@@ -107,7 +107,7 @@
       "path": "VERSION.txt",
       "bytes": 7,
       "mode": "0644",
-      "sha256": "dd67279cf5947239952992ae25ead520fa85909e9da83400c3eb7d6c3e932534"
+      "sha256": "ced75383c549c4c6346496a45309494e5bf21530322b9890803047e9edb652f5"
     },
     {
       "path": "assets/ASSET_NOTICE.md",
@@ -167,7 +167,7 @@
       "path": "docs/MACOS.md",
       "bytes": 1798,
       "mode": "0644",
-      "sha256": "02281cc728f1a8a3552bca8e27f0d192fdf8d8cbe18f8142a44a01183383dde6"
+      "sha256": "30645cce294c4eba9882642d81ff885913f00047505f2eb4c44ba510a1d56c80"
     },
     {
       "path": "docs/PERFORMANCE.md",
@@ -179,7 +179,7 @@
       "path": "docs/RELEASE_BUILDS.md",
       "bytes": 2693,
       "mode": "0644",
-      "sha256": "140487dc119f9a99c500a0b1be26eea4c923506c3310e2d3584554fc4b06e19b"
+      "sha256": "d7851711be2883b94b306348ee68b09dabbca55ab12e66ad8fc92bac945d5145"
     },
     {
       "path": "docs/ROADMAP.md",
@@ -299,7 +299,7 @@
       "path": "metriq_visualizer_app.py",
       "bytes": 130446,
       "mode": "0644",
-      "sha256": "e76f889e8161bcd2cd0cb07eebdeb1d41a68e7af61f0fb33cfc3476c520f36d3"
+      "sha256": "9a4755e07d9fd98847bc4ea4afdbcfeca056465fed49ce8d278b520428d99085"
     },
     {
       "path": "metriq_visualizer_atomic.py",
@@ -443,7 +443,7 @@
       "path": "pyproject.toml",
       "bytes": 2179,
       "mode": "0644",
-      "sha256": "1a52dd9b968189d98a449bead84943845063a59422cf77936c20da3cea67aaa3"
+      "sha256": "f49c5406840569bc11829529e4042ab2f64d1b3b469211f007434c430b0531ce"
     },
     {
       "path": "requirements.txt",
@@ -503,7 +503,7 @@
       "path": "tests/test_gui_smoke.py",
       "bytes": 18762,
       "mode": "0644",
-      "sha256": "2605ef9478d0a9f929bbe7eda3d772dc65caaabdedf7502b95743fd4c9254907"
+      "sha256": "ff2b41d69fb12e53164ed77ffbf9874d7a148996a9fb99ad03a3239d8baf89bb"
     },
     {
       "path": "tests/test_layout.py",
@@ -521,7 +521,7 @@
       "path": "tests/test_merge_tool.py",
       "bytes": 5004,
       "mode": "0644",
-      "sha256": "163d43a11047c7f4e937744c10e4b2943ecdc3dffd9e74699a9d17e08e0409cf"
+      "sha256": "0b7da65ad6a43fc96d805e6269a7b4816c74b5a16a95ce30c99b69d3590fad3d"
     },
     {
       "path": "tests/test_performance.py",
@@ -557,7 +557,7 @@
       "path": "tests/test_updates.py",
       "bytes": 4903,
       "mode": "0644",
-      "sha256": "7c6934959ed15fcfbdf96dec6b04205a48cd2ad68cbbe734f1f27d9b0e647d45"
+      "sha256": "0d8efaf8ed341d53aef18933f2c324aea36482e30210f0e607d6a7995cbedfc8"
     },
     {
       "path": "tests/test_v1125_regressions.py",
@@ -573,15 +573,15 @@
     },
     {
       "path": "tools/merge_into_repo.py",
-      "bytes": 11360,
+      "bytes": 11396,
       "mode": "0755",
-      "sha256": "9fc9b00e0dbec85ba51581b5738f08543a215a59f656f9a5529a83a148e20e58"
+      "sha256": "2eccd18161083d5fdff553942359b59a0ce34dfc0b63512bd7c3d27ed35f74f7"
     },
     {
       "path": "tools/verify_source.py",
       "bytes": 3325,
       "mode": "0755",
-      "sha256": "68913fbcd7f622a5adee60f5d680f20ab9925c1c89e36de6a4cc95b9bf19a94e"
+      "sha256": "42f6fa3474f663259a0ce99f7418331ea6c8f6c214d5bd416d462423fcb7de43"
     }
   ]
 }

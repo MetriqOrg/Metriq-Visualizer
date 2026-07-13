@@ -62,7 +62,7 @@ class GuiSmokeTests(unittest.TestCase):
             encoding="utf-8",
         )
         window = MainWindow()
-        self.assertEqual(APP_VERSION, "1.12.7")
+        self.assertEqual(APP_VERSION, "1.12.8")
         window.autorotate_check.setChecked(True)
         window._viewport_interaction_started()
         self.assertTrue(window.autorotate_check.isChecked())

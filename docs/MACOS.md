@@ -4,7 +4,7 @@
 
 ```bash
 brew install python ffmpeg portaudio
-cd Metriq-Visualizer-v1.12.7
+cd Metriq-Visualizer-v1.12.8
 ./run_macos.command
 ```
 

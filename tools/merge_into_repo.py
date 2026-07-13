@@ -174,26 +174,27 @@ def merge(target: Path, *, dry_run: bool) -> dict:
 
     for source, relative, destination in entries:
         source_hash = digest(source)
+        path_text = relative.as_posix()
         if destination.is_file():
             previous_hash = digest(destination)
             if previous_hash == source_hash:
-                actions.append(FileAction(str(relative), "unchanged", source_hash, previous_hash))
+                actions.append(FileAction(path_text, "unchanged", source_hash, previous_hash))
                 continue
             # Preset libraries are user content as well as application content.
             # Never replace an existing creator preset merely because a release
             # ships a built-in file with the same name.  The v1.12.5 loader can
             # read the historical schema directly.
             if relative.parts and relative.parts[0] == "presets" and relative.suffix.lower() == ".mvpreset":
-                actions.append(FileAction(str(relative), "preserved", source_hash, previous_hash))
+                actions.append(FileAction(path_text, "preserved", source_hash, previous_hash))
                 continue
             backup = backup_root / relative
-            actions.append(FileAction(str(relative), "updated", source_hash, previous_hash, str(backup.relative_to(target))))
+            actions.append(FileAction(path_text, "updated", source_hash, previous_hash, backup.relative_to(target).as_posix()))
         else:
-            actions.append(FileAction(str(relative), "added", source_hash))
+            actions.append(FileAction(path_text, "added", source_hash))
 
     if not dry_run:
         for source, relative, destination in entries:
-            action = next(item for item in actions if item.path == str(relative))
+            action = next(item for item in actions if item.path == relative.as_posix())
             if action.action in {"unchanged", "preserved"}:
                 continue
             destination.parent.mkdir(parents=True, exist_ok=True)
