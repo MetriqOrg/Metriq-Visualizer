@@ -88,6 +88,11 @@ from metriq_visualizer_stage_output import StageOutputConfig, StageOutputDialog,
 from metriq_visualizer_theme import BootOverlay, CutCornerFrame, TechHeader, apply_theme
 from metriq_visualizer_updates import UpdateInfo, check_for_update, installed_app_bundle, prepare_update_install
 
+# A frozen macOS app is signed as a sealed bundle.  Never let optional-media
+# imports create ``__pycache__`` files inside it, or a normal launch would
+# invalidate that signature and make the built-in updater reject the release.
+sys.dont_write_bytecode = True
+
 APP_NAME = "Metriq Visualizer"
 APP_VERSION = "1.12.6"
 APP_WINDOW_TITLE = f"{APP_NAME} v{APP_VERSION}"

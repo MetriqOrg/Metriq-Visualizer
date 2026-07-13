@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import plistlib
 import runpy
+import sys
 import tempfile
 import time
 import unittest
@@ -272,6 +273,9 @@ class CameraAndMotionRegressionTests(unittest.TestCase):
 
 
 class AnalysisControlRegressionTests(unittest.TestCase):
+    def test_app_disables_bytecode_writes_inside_signed_bundles(self) -> None:
+        self.assertTrue(sys.dont_write_bytecode)
+
     def test_audio_settings_change_real_extraction_and_cache_identity(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

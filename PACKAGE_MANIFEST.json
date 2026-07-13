@@ -2,10 +2,10 @@
   "schema": "metriq.complete-source-manifest",
   "schema_version": 1,
   "version": "1.12.6",
-  "generated_at": "2026-07-13T16:42:00+00:00",
+  "generated_at": "2026-07-13T17:06:00+00:00",
   "self_included": false,
   "file_count": 95,
-  "total_bytes": 2816744,
+  "total_bytes": 2817146,
   "files": [
     {
       "path": ".github/workflows/build-release.yml",
@@ -291,9 +291,9 @@
     },
     {
       "path": "metriq_visualizer_app.py",
-      "bytes": 130184,
+      "bytes": 130446,
       "mode": "0644",
-      "sha256": "f16beb83fb2ea59e8b0558ee784e669e2cfb88a0a92923cc91ba5ff3ae385236"
+      "sha256": "1d72119553fbce1bf0c01cf7cb1c2b6dceb4fef3a6c39fb4deb5375992532d67"
     },
     {
       "path": "metriq_visualizer_atomic.py",
@@ -555,9 +555,9 @@
     },
     {
       "path": "tests/test_v1125_regressions.py",
-      "bytes": 21242,
+      "bytes": 21382,
       "mode": "0644",
-      "sha256": "f8c828c5399f5dbb1cd099a7c583b31b4acadac8a81f904717708d0e79ce33eb"
+      "sha256": "3a58b9526b966cfb95740b417cf5ca196f26b7069e49cf605a2fecc8335456d5"
     },
     {
       "path": "tests/test_visuals.py",
