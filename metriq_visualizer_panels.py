@@ -225,8 +225,8 @@ class SourcePanel(QWidget):
         else:
             self.stack.setCurrentWidget(self.waveform)
 
-    def set_time(self, seconds: float) -> None:
-        self.waveform.set_time(seconds)
+    def set_time(self, seconds: float, *, draw: bool = True) -> None:
+        self.waveform.set_time(seconds, draw=draw)
 
 
 class AnalysisDockWidget(QWidget):
@@ -286,13 +286,13 @@ class AnalysisDockWidget(QWidget):
         self.traces.set_data(analysis, geometry)
         self.source_panel.waveform.set_data(analysis, geometry)
 
-    def set_time(self, seconds: float) -> None:
+    def set_time(self, seconds: float, *, draw: bool = True) -> None:
         self._current_time = max(0.0, float(seconds))
         current = self.tabs.currentWidget()
         if current is self.source_panel:
-            self.source_panel.set_time(self._current_time)
+            self.source_panel.set_time(self._current_time, draw=draw)
         elif isinstance(current, AnalysisCanvas):
-            current.set_time(self._current_time)
+            current.set_time(self._current_time, draw=draw)
         # Keep every cursor correct when the user changes tabs, without forcing
         # five canvas redraws for every playback frame.
         for panel in (self.spectrogram, self.chromagram, self.mfcc, self.traces):

@@ -38,7 +38,9 @@
 - The realtime camera using the opposite elevation convention from the exact 3D scene; 90° is now top-down over XY and 0° is level with the plane in both renderers.
 - Grid planes being inseparable from axes, or visually covering geometry as the camera crossed them. Grid visibility is now independent and exact-scene panes are transparent with grid lines drawn behind the visualizer.
 - A paused exact scene being forced through Matplotlib redraws by queued idle callbacks, which could keep CPU usage high after playback. Autorotation now also follows the selected live target rate.
-- Smoke-test results depending on a developer's saved macOS application preferences.
+- Analysis-dock cursor paints competing with the 3D renderer on every playback frame. The active scientific panel now repaints at a bounded 8 Hz while its cursor state remains current.
+- Manual camera interaction silently disabling the selected autorotation control. Rotation now pauses only while dragging and resumes on release.
+- Smoke-test results depending on a developer's saved macOS application preferences. Tests now use an explicit isolated settings file on every platform.
 
 ## 1.12.4 — Low-latency motion rendering and embedded live source
 

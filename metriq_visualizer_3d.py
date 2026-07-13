@@ -1182,6 +1182,8 @@ class Interactive3DViewport(QWidget):
             self.options is not None
             and getattr(self.options, "autorotate", False)
             and (self.scene is not None or self.realtime.live_active)
+            and not self._realtime_drag_active
+            and self._exact_drag_origin is None
         )
         if enabled and not self.autorotate_timer.isActive():
             self.autorotate_clock.start()
@@ -1343,10 +1345,11 @@ class Interactive3DViewport(QWidget):
         return self.realtime.camera()
 
     def _realtime_interaction_started(self) -> None:
-        # Keep the low-latency canvas active for the entire drag. The main
-        # window disables autorotate on press; without this latch, the delayed
-        # options refresh could swap canvases while the mouse is still down.
+        # Keep the low-latency canvas active and temporarily pause automatic
+        # camera motion for the whole drag.  The selected autorotate state is
+        # preserved and resumes once the pointer is released.
         self._realtime_drag_active = True
+        self._sync_autorotate_timer()
         self.interactionStarted.emit()
 
     def _realtime_interaction_finished(self) -> None:
@@ -1364,6 +1367,7 @@ class Interactive3DViewport(QWidget):
         ratio = max(1.0, float(self.canvas.device_pixel_ratio))
         self._exact_drag_origin = (float(event.x) / ratio, float(event.y) / ratio)
         self._exact_drag_camera = (float(self.scene.ax.elev), float(self.scene.ax.azim))
+        self._sync_autorotate_timer()
         self.interactionStarted.emit()
 
     def _button_move(self, event: Any) -> None:
@@ -1387,6 +1391,7 @@ class Interactive3DViewport(QWidget):
 
     def _button_release(self, _event: Any) -> None:
         self._exact_drag_origin = None
+        self._sync_autorotate_timer()
 
     def _scroll(self, event: Any) -> None:
         if self.scene is None or event.inaxes is None:

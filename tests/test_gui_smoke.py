@@ -12,6 +12,8 @@ import numpy as np
 from scipy.io import wavfile
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+_TEST_SETTINGS_ROOT = Path(tempfile.mkdtemp(prefix="metriq-visualizer-test-settings-"))
+os.environ.setdefault("METRIQ_SETTINGS_PATH", str(_TEST_SETTINGS_ROOT / "settings.ini"))
 
 from PySide6.QtCore import QSettings, QUrl  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
@@ -29,13 +31,7 @@ class GuiSmokeTests(unittest.TestCase):
         os.environ["XDG_CONFIG_HOME"] = str(Path(cls.temp.name) / "config")
         os.environ["XDG_CACHE_HOME"] = str(Path(cls.temp.name) / "cache")
         os.environ["METRIQ_CACHE_DIR"] = str(Path(cls.temp.name) / "analysis-cache")
-        # Native macOS QSettings ignores XDG_CONFIG_HOME. Route the smoke
-        # test's preferences to its temporary directory so local application
-        # settings cannot leak into CI or make this test order-dependent.
-        cls._previous_settings_format = QSettings.defaultFormat()
-        QSettings.setDefaultFormat(QSettings.Format.IniFormat)
-        QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(Path(cls.temp.name) / "settings"))
-        settings = QSettings("Metriq", "Metriq Visualizer")
+        settings = QSettings(os.environ["METRIQ_SETTINGS_PATH"], QSettings.Format.IniFormat)
         settings.clear()
         settings.sync()
         cls.app = QApplication.instance() or QApplication([])
@@ -43,7 +39,6 @@ class GuiSmokeTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         cls.app.processEvents()
-        QSettings.setDefaultFormat(cls._previous_settings_format)
         cls.temp.cleanup()
 
     def _wait_for_analysis(self, window: MainWindow, timeout: float = 30.0) -> None:
@@ -66,6 +61,9 @@ class GuiSmokeTests(unittest.TestCase):
         )
         window = MainWindow()
         self.assertEqual(APP_VERSION, "1.12.5")
+        window.autorotate_check.setChecked(True)
+        window._viewport_interaction_started()
+        self.assertTrue(window.autorotate_check.isChecked())
         window._start_analysis(source)
         self._wait_for_analysis(window)
         self.assertIsNotNone(window.viewport.scene)
