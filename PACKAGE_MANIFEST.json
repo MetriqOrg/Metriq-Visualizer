@@ -1,11 +1,11 @@
 {
   "schema": "metriq.complete-source-manifest",
   "schema_version": 1,
-  "version": "1.12.5",
-  "generated_at": "2026-07-13T16:10:32+00:00",
+  "version": "1.12.6",
+  "generated_at": "2026-07-13T16:12:10+00:00",
   "self_included": false,
   "file_count": 95,
-  "total_bytes": 2813699,
+  "total_bytes": 2813603,
   "files": [
     {
       "path": ".github/workflows/build-release.yml",
@@ -27,9 +27,9 @@
     },
     {
       "path": "CHANGELOG.md",
-      "bytes": 10478,
+      "bytes": 10474,
       "mode": "0644",
-      "sha256": "e5bc1303fe196c16845e5d49c82787cdb1ecf698e2c290e380319cb676ed9ae1"
+      "sha256": "400611f410f630e7a45c9958f2507f9a3050f5014b7b0f635f28a6d8cf5f04a0"
     },
     {
       "path": "CODEX_IMPORT.md",
@@ -57,9 +57,9 @@
     },
     {
       "path": "README.md",
-      "bytes": 16568,
+      "bytes": 16476,
       "mode": "0644",
-      "sha256": "bf71140afdf33e93ef9dd3fe827cbcc5c11e1319caf49022648858c2e6d7f3d4"
+      "sha256": "c9d247c5dee1b8bd3118ad90751368938589422c48b650679eca62f9324d0dc2"
     },
     {
       "path": "TRADEMARKS.md",
@@ -101,7 +101,7 @@
       "path": "VERSION.txt",
       "bytes": 7,
       "mode": "0644",
-      "sha256": "2905637229644cff6d7d46e314cb460b05bc7e7c31a62dba974f5db1ad9c38c6"
+      "sha256": "054c4ee293061b6ceb58529b43f2651cc873ee52e1814ac2f4190554d073eff4"
     },
     {
       "path": "assets/ASSET_NOTICE.md",
@@ -293,7 +293,7 @@
       "path": "metriq_visualizer_app.py",
       "bytes": 130184,
       "mode": "0644",
-      "sha256": "825e3e261839c35a40bf5329cdbf3b5ac1c4326ef0bde33f50c9ad899c3e5bd0"
+      "sha256": "f16beb83fb2ea59e8b0558ee784e669e2cfb88a0a92923cc91ba5ff3ae385236"
     },
     {
       "path": "metriq_visualizer_atomic.py",
@@ -437,7 +437,7 @@
       "path": "pyproject.toml",
       "bytes": 2179,
       "mode": "0644",
-      "sha256": "28867718b8878105a39bc52eabd4752b0f60e366d621b9daaaacdaaff4f62417"
+      "sha256": "633058908d92e929109a02def8a80d2edfba0120c673a15e3bb0d84d412bfcc0"
     },
     {
       "path": "requirements.txt",
@@ -497,7 +497,7 @@
       "path": "tests/test_gui_smoke.py",
       "bytes": 18762,
       "mode": "0644",
-      "sha256": "acdf6b02ac61a2c0c94d4f95883a0924de097e09d3d8bdfaf4bf0a2b970cc249"
+      "sha256": "be263e7b28691ba04cb983d0c01a96d923eca664c78cce68b24a0677586a8f7e"
     },
     {
       "path": "tests/test_layout.py",
@@ -515,7 +515,7 @@
       "path": "tests/test_merge_tool.py",
       "bytes": 5004,
       "mode": "0644",
-      "sha256": "133dc3d8d7d2b01b2ef223e55fe83ebe254dd7601dd49f90fe32a0fc90f4a85d"
+      "sha256": "8d7587bb02a6561453514fdfb0b3674e73347091b83fa679851b1baa8cc4809b"
     },
     {
       "path": "tests/test_performance.py",
@@ -575,7 +575,7 @@
       "path": "tools/verify_source.py",
       "bytes": 3325,
       "mode": "0755",
-      "sha256": "dde784f07330829a481436aedb97b523f41f98526ddaeea9cf334fbdcf7bf013"
+      "sha256": "688b72b714cd4977796b15976f96f89a75e5aa4b57177c0b4a3f469354091b50"
     }
   ]
 }

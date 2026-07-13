@@ -65,7 +65,7 @@ def verify(root: Path, imports: bool) -> dict:
             except Exception as exc:  # noqa: BLE001
                 import_errors.append(f"{name}: {type(exc).__name__}: {exc}")
     version = (root / "VERSION.txt").read_text(encoding="utf-8").strip() if (root / "VERSION.txt").is_file() else ""
-    passed = not missing and not compile_errors and not import_errors and version == "1.12.5"
+    passed = not missing and not compile_errors and not import_errors and version == "1.12.6"
     return {
         "schema": "metriq.source-verification",
         "schema_version": 1,
