@@ -2,10 +2,10 @@
   "schema": "metriq.complete-source-manifest",
   "schema_version": 1,
   "version": "1.12.6",
-  "generated_at": "2026-07-13T16:12:10+00:00",
+  "generated_at": "2026-07-13T16:42:00+00:00",
   "self_included": false,
   "file_count": 95,
-  "total_bytes": 2813603,
+  "total_bytes": 2816744,
   "files": [
     {
       "path": ".github/workflows/build-release.yml",
@@ -129,9 +129,9 @@
     },
     {
       "path": "build/build_pyinstaller.py",
-      "bytes": 3352,
+      "bytes": 3922,
       "mode": "0755",
-      "sha256": "c4cbb15284c37909cba8431972d4fccb884bba502aa666b011c67691d4e2531f"
+      "sha256": "329a6be41d7a8ed0b24614a307f82b00e2ee5346cd3c19dc8729b91c8e407ba7"
     },
     {
       "path": "docs/ARCHITECTURE_1_12.md",
@@ -357,9 +357,9 @@
     },
     {
       "path": "metriq_visualizer_performance.py",
-      "bytes": 9030,
+      "bytes": 8960,
       "mode": "0644",
-      "sha256": "2836ffc5d0a25b299172c87fa908aca6f74a1829ed92bed39f71ea6175e9f667"
+      "sha256": "ff28a7a4bedec4f5402b42f534ef97e53ab4a0b2f4a4f3c59b83441cb665aa0e"
     },
     {
       "path": "metriq_visualizer_preset_files.py",
@@ -375,9 +375,9 @@
     },
     {
       "path": "metriq_visualizer_realtime.py",
-      "bytes": 28025,
+      "bytes": 29204,
       "mode": "0644",
-      "sha256": "74d1970be3be336ef18e70018c6a7fd3a7af422cbd6dba274bfc0bce2fc00721"
+      "sha256": "a8be3ce14675e70759791137abea6228895da01c76ae4906aa57a4eeda8c79ec"
     },
     {
       "path": "metriq_visualizer_render.py",
@@ -521,7 +521,7 @@
       "path": "tests/test_performance.py",
       "bytes": 4077,
       "mode": "0644",
-      "sha256": "7bd40dce2f3eb9d89f048fede082cb75fe3787ba4669f5b5d2490116e3422526"
+      "sha256": "2ca7346bdc069139ef81928f09599a983bd65209e6ac8f733de1626b75173d08"
     },
     {
       "path": "tests/test_persistence.py",
@@ -555,9 +555,9 @@
     },
     {
       "path": "tests/test_v1125_regressions.py",
-      "bytes": 19780,
+      "bytes": 21242,
       "mode": "0644",
-      "sha256": "59bfd26ac72b8541d6f34f742eee31a2e542905f6f0dbceca3d0924a5a4a7ca4"
+      "sha256": "f8c828c5399f5dbb1cd099a7c583b31b4acadac8a81f904717708d0e79ce33eb"
     },
     {
       "path": "tests/test_visuals.py",

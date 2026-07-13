@@ -44,6 +44,20 @@ def patch_macos_bundle_metadata(app_path: Path, version: str) -> Path:
     return plist_path
 
 
+def sign_macos_bundle(app_path: Path, *, runner=subprocess.run) -> None:
+    """Ad-hoc sign a local release bundle after changing its Info.plist."""
+
+    result = runner(
+        ["/usr/bin/codesign", "--force", "--deep", "--sign", "-", str(app_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if int(result.returncode) != 0:
+        message = str(result.stderr).strip() or "codesign failed."
+        raise RuntimeError(f"Could not sign {app_path.name}: {message}")
+
+
 
 def data_arg(source: Path, target: str) -> str:
     separator = ";" if platform.system() == "Windows" else ":"
@@ -83,7 +97,9 @@ def main() -> int:
     result = subprocess.call(command, cwd=ROOT, env=environment)
     if result == 0 and system == "Darwin":
         version = (ROOT / "VERSION.txt").read_text(encoding="utf-8").strip()
-        patch_macos_bundle_metadata(ROOT / "build-out" / "dist" / f"{APP_NAME}.app", version)
+        app_path = ROOT / "build-out" / "dist" / f"{APP_NAME}.app"
+        patch_macos_bundle_metadata(app_path, version)
+        sign_macos_bundle(app_path)
     return result
 
 
