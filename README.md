@@ -1,14 +1,14 @@
 ![Metriq Visualizer Banner](assets/metriq_logo_color.png)
 
-# Metriq Visualizer v1.12.5
+# Metriq Visualizer v1.12.6
 
 Metriq Visualizer is an open-source, local-first **interactive 3D media and data visualizer** for creators, educators, students, field observers, and light scientific work. It maps audio, video, CSV, TSV, TXT, and XLSX sources into formula-driven three-dimensional geometry, synchronized analysis panels, reusable projects, and finished video or image exports.
 
-Version 1.12.5 is a complete source distribution. It keeps the restored original visualizer workspace and corrects camera interaction, extraction controls, live effects, and microphone visualization without replacing the application shell.
+Version 1.12.6 keeps the restored original visualizer workspace while adding configurable second-screen Stage Output and verified GitHub release updates.
 
 ![Metriq Visualizer 1.12.5 workspace](docs/images/main-workspace-v1125.png)
 
-## 1.12.5: camera, extraction, and real-time input repairs
+## 1.12.6: verified updates and second-screen output
 
 - **Stable camera control:** autorotation uses an independent wall clock, mouse orbit uses bounded logical-pixel deltas, and zoom transforms the complete coordinate field—including grid and axes—instead of scaling only the data artists.
 - **Visible live effects:** spline smoothing and motion accents remain available in ordinary preview profiles; expensive tube meshes may still use a centerline proxy during motion.

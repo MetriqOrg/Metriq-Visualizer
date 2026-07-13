@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — audience output and verified updates
+## 1.12.6 — audience output and verified updates
 
 ### Added
 
