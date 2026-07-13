@@ -1,0 +1,13 @@
+{
+  "first_cache_hit": false,
+  "first_seconds": 0.02507938100006868,
+  "frames": 83,
+  "generated_at": "2026-07-12T03:13:33.939377+00:00",
+  "note": "Single validation run; timings vary by storage and CPU.",
+  "schema": "metriq.validation.cache-benchmark",
+  "schema_version": 2,
+  "second_cache_hit": true,
+  "second_seconds": 0.0063770050001039635,
+  "source_description": "synthetic 2-second mono WAV",
+  "speedup": 3.932783649951633
+}

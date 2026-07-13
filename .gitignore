@@ -1,10 +1,37 @@
-.venv/
+# Python
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
 *.pyd
-*.log
-*.mp4
-*.wav
+*.so
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Environments and builds
+.venv/
+venv/
+build-out/
+build/lib/
+build/bdist.*/
+build/*.spec
+dist/
+*.egg-info/
+
+# Local runtime state
+.metriq-cache/
+.metriq-merge-backup/
+.metriq-merge-report.json
 *.tmp
+*.tmp.npz
+
+# Editors / OS
 .DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local exports
+exports/
+render-output/

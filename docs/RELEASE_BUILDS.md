@@ -1,37 +1,60 @@
 # Release builds
 
-Do not commit compiled binaries into the source tree. Keep source code in Git, and attach compiled `.zip`, `.dmg`, `.AppImage`, or `.exe` files to GitHub Releases.
+Compiled artifacts belong in GitHub Releases or workflow artifacts, not in the
+source repository.
 
-Recommended release assets:
-
-| Platform | Asset name | Notes |
-|---|---|---|
-| macOS Apple Silicon | `Metriq-Visualizer-macOS-arm64.zip` | Build on `macos-14` or newer. |
-| macOS Intel | `Metriq-Visualizer-macOS-x86_64.zip` | Build on Intel macOS runner if available, or maintain manually. |
-| Linux x86_64 | `Metriq-Visualizer-Linux-x86_64.tar.gz` | Best for users who do not want Python setup. |
-| Windows x86_64 | `Metriq-Visualizer-Windows-x86_64.zip` | Optional if Windows users request it. |
-
-## Manual local build
+## Local PyInstaller build
 
 ```bash
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt pyinstaller
+python -m pip install '.[dev]'
 python build/build_pyinstaller.py
 ```
 
-The output will be in `dist/`.
+The output is written under `build-out/dist`.
 
-## GitHub Actions build
+FFmpeg is not bundled by the build script. Bundling FFmpeg requires a separate
+platform-specific licensing, codec, hardware, and update decision. The built
+application detects a system FFmpeg and retains PNG/JPEG sequence output when
+none is available.
 
-This repo includes `.github/workflows/build-release.yml`. It builds packaged artifacts when a version tag is pushed:
+## GitHub Actions
+
+`.github/workflows/quality.yml` runs static checks, compilation, unit tests, and
+an offscreen application smoke test.
+
+`.github/workflows/build-release.yml` builds on Linux, Windows, and macOS when
+manually dispatched or when a `v*` tag is pushed. It uploads platform artifacts
+to the workflow run.
+
+Suggested release process:
 
 ```bash
-git tag v1.10.18
-git push origin v1.10.18
+git switch main
+git pull --ff-only
+python tools/verify_source.py --imports
+QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -p 'test_*.py' -v
+git tag -s v1.12.5 -m "Metriq Visualizer 1.12.5"
+git push origin v1.12.5
 ```
 
-Then create or edit the GitHub Release for that tag and attach the build artifacts, or allow the workflow to upload them as workflow artifacts first.
+Review all generated artifacts before attaching them to a public release.
 
-## Notarization
+## Platform artifact names
 
-Unsigned macOS builds will trigger Gatekeeper warnings. For a polished public release, add Apple Developer ID signing and notarization secrets to GitHub Actions.
+- `Metriq-Visualizer-1.12.5-Linux-x86_64.tar.gz`
+- `Metriq-Visualizer-1.12.5-Windows-x86_64.zip`
+- `Metriq-Visualizer-1.12.5-macOS-arm64.zip`
+
+Runner architecture determines actual compatibility. Apple Silicon and Intel
+macOS should not be represented as interchangeable unless a universal build is
+explicitly produced and tested.
+
+## Signing
+
+- macOS distribution should use Developer ID signing and notarization.
+- Windows distribution should use Authenticode signing.
+- Release checksum files should be generated after signing and packaging.
+- Source ZIP checksums should be published separately from binary checksums.

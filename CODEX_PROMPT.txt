@@ -1,0 +1,22 @@
+Apply the extracted Metriq Visualizer 1.12.5 complete source package to the existing MetriqOrg/Metriq-Visualizer checkout without deleting or reinitializing the repository.
+
+1. Confirm the target contains its existing .git directory and record the current branch and git status.
+2. From the extracted package, run:
+   python tools/merge_into_repo.py --target <repo-path> --dry-run --json
+3. Review the dry-run actions. Then run:
+   python tools/merge_into_repo.py --target <repo-path>
+4. In the target checkout, inspect:
+   git status --short
+   git diff --stat
+   git diff
+   git diff --check
+5. Install requirements in an isolated environment and run:
+   python tools/verify_source.py --imports
+   QT_QPA_PLATFORM=offscreen MPLBACKEND=Agg python -m pytest -q
+   python -m ruff check .
+   python -m compileall -q .
+6. Launch the application and verify that the main workspace is the genuine interactive 3D viewport, light mode recolors the 3D canvas, Birdsong/legacy mappings and Glowstick/Neon Lights visual styles are present, the live performance profiles and adaptive density switch viewport workload without changing export settings, FFT/range controls alter reanalysis, autorotation and drag/zoom are stable, the analysis dock is beneath the scene, live microphone input maps into the main 3D viewport, audio playback moves the visualization, and Export Studio renders the exact 3D scene.
+7. Confirm that any pre-existing presets/*.mvpreset files reported as preserved remain byte-for-byte unchanged.
+8. Create a normal feature branch named feature/metriq-visualizer-1.12.5, commit only intended source files, and push that branch for a pull request.
+
+Do not remove unrelated files, replace the repository directory, initialize a new Git repository, reset history, modify remotes, force-push, commit .metriq-merge-backup, or commit .metriq-merge-report.json. Report any failing validation accurately instead of suppressing it.

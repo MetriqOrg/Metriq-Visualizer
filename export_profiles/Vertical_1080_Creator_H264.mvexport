@@ -1,0 +1,116 @@
+{
+  "profile": {
+    "audio_bitrate_kbps": 192,
+    "encoder_mode": "auto",
+    "end_time": null,
+    "format_key": "mp4_h264",
+    "fps": 30.0,
+    "height": 1920,
+    "include_audio": true,
+    "jpeg_quality": 92,
+    "layout": {
+      "background": "#070b11",
+      "items": {
+        "chromagram": {
+          "background_alpha": 0.82,
+          "content_alpha": 1.0,
+          "content_scale": 1.0,
+          "enabled": true,
+          "fit_mode": "contain",
+          "h": 0.175,
+          "show_title": true,
+          "w": 0.29,
+          "x": 0.035,
+          "y": 0.8
+        },
+        "geometry": {
+          "background_alpha": 0.24,
+          "content_alpha": 1.0,
+          "content_scale": 1.0,
+          "enabled": true,
+          "fit_mode": "contain",
+          "h": 0.555,
+          "show_title": true,
+          "w": 0.93,
+          "x": 0.035,
+          "y": 0.025
+        },
+        "mfcc": {
+          "background_alpha": 0.82,
+          "content_alpha": 1.0,
+          "content_scale": 1.0,
+          "enabled": true,
+          "fit_mode": "contain",
+          "h": 0.175,
+          "show_title": true,
+          "w": 0.29,
+          "x": 0.345,
+          "y": 0.8
+        },
+        "preview": {
+          "background_alpha": 0.82,
+          "content_alpha": 1.0,
+          "content_scale": 1.0,
+          "enabled": true,
+          "fit_mode": "cover",
+          "h": 0.19,
+          "show_title": true,
+          "w": 0.445,
+          "x": 0.035,
+          "y": 0.595
+        },
+        "spectrogram": {
+          "background_alpha": 0.82,
+          "content_alpha": 1.0,
+          "content_scale": 1.0,
+          "enabled": true,
+          "fit_mode": "contain",
+          "h": 0.19,
+          "show_title": true,
+          "w": 0.465,
+          "x": 0.5,
+          "y": 0.595
+        },
+        "traces": {
+          "background_alpha": 0.82,
+          "content_alpha": 1.0,
+          "content_scale": 1.0,
+          "enabled": true,
+          "fit_mode": "contain",
+          "h": 0.175,
+          "show_title": true,
+          "w": 0.31,
+          "x": 0.655,
+          "y": 0.8
+        }
+      },
+      "order": [
+        "geometry",
+        "preview",
+        "spectrogram",
+        "chromagram",
+        "mfcc",
+        "traces"
+      ],
+      "safe_area_percent": 5.0,
+      "schema": "metriq.export-layout",
+      "schema_version": 2
+    },
+    "name": "Vertical 1080 Creator H.264",
+    "project_subtitle": "",
+    "quality": 18,
+    "show_axes": true,
+    "show_axis_labels": true,
+    "show_colorbar": false,
+    "show_project_title": true,
+    "show_scene_hud": false,
+    "show_timecode": false,
+    "show_watermark": false,
+    "start_time": 0.0,
+    "title": "Metriq Visualizer",
+    "watermark_text": "",
+    "width": 1080
+  },
+  "schema": "metriq.export-profile",
+  "schema_version": 4
+}

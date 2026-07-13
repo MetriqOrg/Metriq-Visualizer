@@ -1,83 +1,85 @@
 name: Build release artifacts
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
 
 jobs:
   build:
-    name: Build ${{ matrix.os }}
+    name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-14, windows-2022]
+        include:
+          - os: ubuntu-22.04
+            artifact: Metriq-Visualizer-1.12.5-Linux-x86_64
+          - os: windows-2022
+            artifact: Metriq-Visualizer-1.12.5-Windows-x86_64
+          - os: macos-14
+            artifact: Metriq-Visualizer-1.12.5-macOS-arm64
+    env:
+      QT_QPA_PLATFORM: offscreen
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: pip
 
-      - name: Install Linux system packages
+      - name: Install Linux system libraries
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 libpulse0
+          sudo apt-get install -y ffmpeg libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 libpulse0 libportaudio2
 
-      - name: Install macOS system packages
+      - name: Install macOS system libraries
         if: runner.os == 'macOS'
-        run: |
-          brew install ffmpeg || true
+        run: brew install ffmpeg portaudio
+
+      - name: Install Windows FFmpeg
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install ffmpeg -y --no-progress
 
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt pyinstaller
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller ruff
 
-      - name: Build app
+      - name: Validate before build
+        run: |
+          python -m ruff check .
+          python tools/verify_source.py --imports
+          python -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Build application
         run: python build/build_pyinstaller.py
 
-      - name: Package Linux artifact
+      - name: Package Linux
         if: runner.os == 'Linux'
         shell: bash
-        run: |
-          tar -C dist -czf Metriq-Visualizer-Linux-x86_64.tar.gz "Metriq Visualizer"
+        run: tar -C build-out/dist -czf "${{ matrix.artifact }}.tar.gz" "Metriq Visualizer"
 
-      - name: Package macOS artifact
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          ditto -c -k --sequesterRsrc --keepParent "dist/Metriq Visualizer.app" Metriq-Visualizer-macOS-arm64.zip
-
-      - name: Package Windows artifact
+      - name: Package Windows
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          Compress-Archive -Path "dist/Metriq Visualizer" -DestinationPath "Metriq-Visualizer-Windows-x86_64.zip"
+        run: Compress-Archive -Path "build-out/dist/Metriq Visualizer" -DestinationPath "${{ matrix.artifact }}.zip"
 
-      - name: Upload Linux artifact
-        if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
-        with:
-          name: Metriq-Visualizer-Linux-x86_64
-          path: Metriq-Visualizer-Linux-x86_64.tar.gz
-
-      - name: Upload macOS artifact
+      - name: Package macOS
         if: runner.os == 'macOS'
-        uses: actions/upload-artifact@v4
-        with:
-          name: Metriq-Visualizer-macOS-arm64
-          path: Metriq-Visualizer-macOS-arm64.zip
+        shell: bash
+        run: ditto -c -k --sequesterRsrc --keepParent "build-out/dist/Metriq Visualizer.app" "${{ matrix.artifact }}.zip"
 
-      - name: Upload Windows artifact
-        if: runner.os == 'Windows'
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Metriq-Visualizer-Windows-x86_64
-          path: Metriq-Visualizer-Windows-x86_64.zip
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ matrix.artifact }}.zip
+            ${{ matrix.artifact }}.tar.gz
+          if-no-files-found: error
