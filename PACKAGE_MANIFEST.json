@@ -2,10 +2,10 @@
   "schema": "metriq.complete-source-manifest",
   "schema_version": 1,
   "version": "1.12.6",
-  "generated_at": "2026-07-13T19:10:00+00:00",
+  "generated_at": "2026-07-13T19:15:00+00:00",
   "self_included": false,
   "file_count": 96,
-  "total_bytes": 2822113,
+  "total_bytes": 2820567,
   "files": [
     {
       "path": ".gitattributes",
@@ -63,9 +63,9 @@
     },
     {
       "path": "README.md",
-      "bytes": 16516,
+      "bytes": 14970,
       "mode": "0644",
-      "sha256": "7b481203d54f263c319996c1b76cb3bbef0200725042aa0292716ff43e6e3170"
+      "sha256": "d7682f05e6dd26a1f64b10793a323004f3cc52ca8c484015da431f1c5931b98f"
     },
     {
       "path": "TRADEMARKS.md",
