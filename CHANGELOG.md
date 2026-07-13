@@ -12,6 +12,10 @@
 
 - The Mapping tab once again presents the full **Feature Formula Presets** menu, including all original Pitch/Timbre/Motion, Audio PCA, Rhythm/Brightness/Texture, and table mappings. A GUI regression test verifies every built-in entry is visible.
 - Fast Preview retains enough Catmull–Rom samples for Smooth spline to read as visibly curved rather than point-to-point segments.
+- The realtime media and microphone paths now always tessellate the displayed
+  Smooth spline trail instead of reusing a straight precomputed segment buffer.
+- Frozen macOS bundles no longer write Python bytecode into their signed
+  resources after launch, so update verification remains valid.
 
 ## 1.12.5 — Camera control, restored extraction settings, and live 3D microphone input
 

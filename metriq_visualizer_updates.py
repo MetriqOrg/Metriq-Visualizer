@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import platform
 import plistlib
 import re
 import shlex
@@ -68,10 +69,35 @@ def _safe_sha256(value: object) -> str | None:
     return text if re.fullmatch(r"[0-9a-f]{64}", text) else None
 
 
-def _macos_asset(release: Mapping[str, Any]) -> Mapping[str, Any] | None:
-    """Select the signed macOS application archive, never a source archive."""
+def _macos_architecture(machine: str | None = None) -> str | None:
+    """Return the current macOS CPU family using release-artifact labels."""
+
+    name = str(machine or platform.machine()).strip().casefold().replace("-", "_")
+    if name in {"arm64", "aarch64"}:
+        return "arm64"
+    if name in {"x86_64", "amd64", "x64", "intel"}:
+        return "x86_64"
+    return None
+
+
+def _asset_macos_architecture(name: str) -> str | None:
+    """Read a macOS artifact architecture from its stable release filename."""
+
+    normalized = str(name).casefold().replace("-", "_")
+    if "universal" in normalized:
+        return "universal"
+    if "arm64" in normalized or "aarch64" in normalized:
+        return "arm64"
+    if "x86_64" in normalized or "amd64" in normalized or "intel" in normalized:
+        return "x86_64"
+    return None
+
+
+def _macos_asset(release: Mapping[str, Any], *, machine: str | None = None) -> Mapping[str, Any] | None:
+    """Select a signed, CPU-compatible macOS archive, never source code."""
 
     candidates: list[tuple[int, Mapping[str, Any]]] = []
+    target_architecture = _macos_architecture(machine)
     for raw in release.get("assets", ()):
         if not isinstance(raw, Mapping):
             continue
@@ -82,19 +108,35 @@ def _macos_asset(release: Mapping[str, Any]) -> Mapping[str, Any] | None:
         url = str(raw.get("browser_download_url", "")).strip()
         if digest is None or not url.startswith("https://"):
             continue
+        asset_architecture = _asset_macos_architecture(name)
+        if (
+            target_architecture is not None
+            and asset_architecture is not None
+            and asset_architecture not in {target_architecture, "universal"}
+        ):
+            continue
         score = 0
         if "macos" in name or "mac" in name or "darwin" in name:
             score += 100
         if ".app" in name or "app" in name:
             score += 40
-        if "arm64" in name or "universal" in name:
+        if asset_architecture == target_architecture:
+            score += 30
+        elif asset_architecture == "universal":
+            score += 20
+        elif asset_architecture is None:
             score += 10
         if score:
             candidates.append((score, raw))
     return max(candidates, key=lambda candidate: candidate[0])[1] if candidates else None
 
 
-def available_update(current_version: str, releases: Iterable[Mapping[str, Any]]) -> UpdateInfo | None:
+def available_update(
+    current_version: str,
+    releases: Iterable[Mapping[str, Any]],
+    *,
+    machine: str | None = None,
+) -> UpdateInfo | None:
     """Return the newest compatible stable release newer than ``current_version``."""
 
     found: list[UpdateInfo] = []
@@ -104,7 +146,7 @@ def available_update(current_version: str, releases: Iterable[Mapping[str, Any]]
         version = str(release.get("tag_name") or release.get("name") or "").strip()
         if not is_newer_version(version, current_version):
             continue
-        asset = _macos_asset(release)
+        asset = _macos_asset(release, machine=machine)
         if asset is None:
             continue
         digest = _safe_sha256(asset.get("digest"))

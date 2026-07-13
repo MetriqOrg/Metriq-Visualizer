@@ -6,6 +6,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build on ${{ matrix.os }}
@@ -20,6 +23,8 @@ jobs:
             artifact: Metriq-Visualizer-${{ github.ref_name }}-Windows-x86_64
           - os: macos-14
             artifact: Metriq-Visualizer-${{ github.ref_name }}-macOS-arm64
+          - os: macos-15-intel
+            artifact: Metriq-Visualizer-${{ github.ref_name }}-macOS-x86_64
     env:
       QT_QPA_PLATFORM: offscreen
 
@@ -60,6 +65,11 @@ jobs:
       - name: Build application
         run: python build/build_pyinstaller.py
 
+      - name: Verify macOS application signature
+        if: runner.os == 'macOS'
+        shell: bash
+        run: codesign --verify --deep --strict "build-out/dist/Metriq Visualizer.app"
+
       - name: Package Linux
         if: runner.os == 'Linux'
         shell: bash
@@ -97,6 +107,11 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
+      - name: Generate SHA-256 manifest
+        shell: bash
+        run: |
+          cd release-assets
+          sha256sum ./*.zip ./*.tar.gz > SHA256SUMS.txt
       - name: Create release and upload verified assets
         uses: softprops/action-gh-release@v2
         with:
@@ -105,3 +120,4 @@ jobs:
           files: |
             release-assets/*.zip
             release-assets/*.tar.gz
+            release-assets/SHA256SUMS.txt
