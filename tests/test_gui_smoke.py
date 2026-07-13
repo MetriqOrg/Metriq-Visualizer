@@ -20,6 +20,7 @@ from PySide6.QtCore import QSettings, QUrl  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from metriq_visualizer_app import APP_VERSION, MainWindow  # noqa: E402
+from metriq_visualizer_core import DEFAULT_PRESETS  # noqa: E402
 from metriq_visualizer_export_pipeline import ExportProfile  # noqa: E402
 from metriq_visualizer_export_studio import ExportStudioDialog  # noqa: E402
 from metriq_visualizer_live import LiveInputDialog  # noqa: E402
@@ -124,6 +125,16 @@ class GuiSmokeTests(unittest.TestCase):
         self._wait_for_analysis(window)
 
         self.assertGreaterEqual(window.preset_combo.findText("Birdsong"), 0)
+        self.assertEqual(window.preset_combo.count(), len(DEFAULT_PRESETS))
+        for original_name in (
+            "Pitch/Timbre/Motion",
+            "Audio PCA",
+            "Rhythm / Brightness / Texture",
+            "Table / PCA explorer",
+            "Table / Spread / Change",
+            "Manual starter",
+        ):
+            self.assertGreaterEqual(window.preset_combo.findText(original_name), 0)
         self.assertGreaterEqual(window.visual_preset_combo.findText("Glowstick"), 0)
         self.assertGreaterEqual(window.visual_preset_combo.findText("Neon Lights"), 0)
 

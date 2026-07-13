@@ -15,11 +15,11 @@ jobs:
       matrix:
         include:
           - os: ubuntu-22.04
-            artifact: Metriq-Visualizer-1.12.5-Linux-x86_64
+            artifact: Metriq-Visualizer-${{ github.ref_name }}-Linux-x86_64
           - os: windows-2022
-            artifact: Metriq-Visualizer-1.12.5-Windows-x86_64
+            artifact: Metriq-Visualizer-${{ github.ref_name }}-Windows-x86_64
           - os: macos-14
-            artifact: Metriq-Visualizer-1.12.5-macOS-arm64
+            artifact: Metriq-Visualizer-${{ github.ref_name }}-macOS-arm64
     env:
       QT_QPA_PLATFORM: offscreen
 
@@ -83,3 +83,25 @@ jobs:
             ${{ matrix.artifact }}.zip
             ${{ matrix.artifact }}.tar.gz
           if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Create release and upload verified assets
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          prerelease: false
+          files: |
+            release-assets/*.zip
+            release-assets/*.tar.gz

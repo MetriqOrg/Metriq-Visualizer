@@ -19,6 +19,12 @@ Version 1.12.5 is a complete source distribution. It keeps the restored original
 
 See [`CHANGELOG.md`](CHANGELOG.md), [`UPGRADE_1_12_5.md`](UPGRADE_1_12_5.md), and [`docs/VALIDATION_1_12.md`](docs/VALIDATION_1_12.md).
 
+## Stage Output and updates
+
+**Stage Output** keeps the operator workspace separate from an audience display. Open it from the command bar (or `Ctrl+Shift+P`), choose the projector or second display, then use the familiar composition canvas to enable, position, resize, and order geometry, source, spectrogram, chromagram, MFCC, and mapped traces. Its background can be a color, static image, or muted looping video. The stage window mirrors already-rendered canvases at an adjustable 5–30 fps, so it does not start a competing analysis or 3D render loop; press `Esc` on the audience display to close it.
+
+On normal app launches, Metriq checks the official GitHub releases in the background. **Check updates** runs the same check on demand. Only newer non-prerelease macOS app archives with GitHub's SHA-256 digest are eligible. After explicit approval, Metriq verifies the archive digest, bundle identity/version, and macOS signature before it closes and replaces itself; release source ZIPs and unverifiable assets are never auto-installed.
+
 ## 1.12.2 foundation: restore the visualizer as the product core
 
 The v1.12.0/v1.12.1 application shell moved too far away from the original Visualizer. In particular, it replaced the original genuine Matplotlib 3D scene with a flattened projection in the primary workflow. That was an architectural regression, not a cosmetic issue.

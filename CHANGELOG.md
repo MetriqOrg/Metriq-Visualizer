@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased — audience output and verified updates
+
+### Added
+
+- A configurable **Stage Output** window for a projector, TV, or second monitor. It mirrors the already-rendered live scene so studio controls remain available on the operator display, while composition can independently enable, move, resize, order, and fit geometry, source, spectrogram, chromagram, MFCC, and mapped traces.
+- Stage backgrounds can be a solid color, static image, or muted looping video. Stage configuration—including composition—persists in projects and local settings.
+- A background GitHub release checker and a **Check updates** command. It only offers non-prerelease macOS application archives carrying GitHub's SHA-256 digest; before replacement it validates the downloaded digest, bundle identity/version, and code signature, then restarts only after the operator explicitly approves the update.
+
+### Fixed
+
+- The Mapping tab once again presents the full **Feature Formula Presets** menu, including all original Pitch/Timbre/Motion, Audio PCA, Rhythm/Brightness/Texture, and table mappings. A GUI regression test verifies every built-in entry is visible.
+- Fast Preview retains enough Catmull–Rom samples for Smooth spline to read as visibly curved rather than point-to-point segments.
+
 ## 1.12.5 — Camera control, restored extraction settings, and live 3D microphone input
 
 ### Added

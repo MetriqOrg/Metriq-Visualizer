@@ -21,12 +21,13 @@ from typing import Any
 
 import numpy as np
 from PySide6.QtCore import QElapsedTimer, QObject, QSettings, QSignalBlocker, Qt, QThread, QTimer, QUrl, Signal, Slot
-from PySide6.QtGui import QCloseEvent, QDragEnterEvent, QDropEvent, QKeySequence, QShortcut
+from PySide6.QtGui import QCloseEvent, QDragEnterEvent, QDropEvent, QKeySequence, QPixmap, QShortcut
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
     QDockWidget,
     QDoubleSpinBox,
     QFileDialog,
@@ -83,7 +84,9 @@ from metriq_visualizer_preset_files import (
 )
 from metriq_visualizer_projects import LEGACY_PROJECT_EXTENSIONS, build_project_payload, load_project, save_project
 from metriq_visualizer_render import ExportOptions
+from metriq_visualizer_stage_output import StageOutputConfig, StageOutputDialog, StageOutputWindow
 from metriq_visualizer_theme import BootOverlay, CutCornerFrame, TechHeader, apply_theme
+from metriq_visualizer_updates import UpdateInfo, check_for_update, installed_app_bundle, prepare_update_install
 
 APP_NAME = "Metriq Visualizer"
 APP_VERSION = "1.12.5"
@@ -180,6 +183,41 @@ class AnalysisWorker(QObject):
             self.failed.emit(details[-8000:])
 
 
+class UpdateWorker(QObject):
+    """Background GitHub metadata check that never blocks playback or analysis."""
+
+    finished = Signal(object)
+    failed = Signal(str)
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            self.finished.emit(check_for_update(APP_VERSION))
+        except Exception as exc:  # noqa: BLE001
+            self.failed.emit(str(exc))
+
+
+class UpdateInstallWorker(QObject):
+    """Downloads and verifies a user-approved update off the UI thread."""
+
+    finished = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, update: UpdateInfo, bundle: Path) -> None:
+        super().__init__()
+        self.update = update
+        self.bundle = bundle
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            script = prepare_update_install(self.update, self.bundle)
+            self.finished.emit(str(script))
+        except Exception as exc:  # noqa: BLE001
+            details = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+            self.failed.emit(details[-8000:])
+
+
 class MainWindow(QMainWindow):
     """Responsive desktop interface around Metriq's existing local renderer."""
 
@@ -205,6 +243,13 @@ class MainWindow(QMainWindow):
         self._applying_analysis_profile = False
         self.live_input_dock: QDockWidget | None = None
         self.live_input_panel: LiveInputPanel | None = None
+        saved_stage = self.settings.value("stage_output", "")
+        try:
+            stage_payload = json.loads(str(saved_stage)) if saved_stage else None
+        except (TypeError, ValueError, json.JSONDecodeError):
+            stage_payload = None
+        self.stage_output_config = StageOutputConfig.from_dict(stage_payload)
+        self.stage_output_window: StageOutputWindow | None = None
 
         self.analysis: AnalysisResult | None = None
         self.geometry: GeometryResult | None = None
@@ -215,6 +260,10 @@ class MainWindow(QMainWindow):
 
         self.analysis_thread: QThread | None = None
         self.analysis_worker: AnalysisWorker | None = None
+        self.update_thread: QThread | None = None
+        self.update_worker: QObject | None = None
+        self._manual_update_check = False
+        self._pending_update_install: tuple[UpdateInfo, Path] | None = None
         self.pending_state: dict[str, Any] | None = None
         self.pending_seek: float | None = None
 
@@ -269,6 +318,11 @@ class MainWindow(QMainWindow):
         self._set_theme(self.theme_name, persist=False)
         self._set_ready_state(False)
         self._set_status("Ready · drop a local media or table file to begin.")
+
+        # Test settings are intentionally isolated; do not send their fixtures
+        # over the network. Real app launches check quietly after startup.
+        if not os.environ.get("METRIQ_SETTINGS_PATH") and bool(self.settings.value("check_updates", True)):
+            QTimer.singleShot(4000, self._background_update_check)
 
         self.boot_overlay = BootOverlay(self.centralWidget())
         self.boot_overlay.finished.connect(lambda: self.open_button.setFocus())
@@ -326,8 +380,12 @@ class MainWindow(QMainWindow):
         self.export_button = QPushButton("Export Studio")
         self.export_button.setProperty("accent", True)
         self.export_button.clicked.connect(self.open_export_studio)
+        self.stage_output_button = QPushButton("Stage output")
+        self.stage_output_button.clicked.connect(self.open_stage_output)
         self.data_export_button = QPushButton("Export data")
         self.data_export_button.clicked.connect(self.export_data_dialog)
+        self.update_button = QPushButton("Check updates")
+        self.update_button.clicked.connect(self.check_for_updates)
         self.restore_button = QPushButton("Restore session")
         self.restore_button.clicked.connect(self.restore_session)
         self.restore_button.setEnabled(self._recoverable_session() is not None)
@@ -341,7 +399,9 @@ class MainWindow(QMainWindow):
             self.load_project_button,
             self.save_project_button,
             self.export_button,
+            self.stage_output_button,
             self.data_export_button,
+            self.update_button,
             self.restore_button,
         ):
             layout.addWidget(button)
@@ -382,10 +442,14 @@ class MainWindow(QMainWindow):
     def _build_mapping_tab(self) -> QWidget:
         scroll, layout = self._scroll_panel()
 
-        preset_group = QGroupBox("Mapping preset")
+        preset_group = QGroupBox("Feature Formula Presets")
         preset_form = QFormLayout(preset_group)
         self.preset_combo = QComboBox()
         self.preset_combo.addItems(DEFAULT_PRESETS.keys())
+        self.preset_combo.setMaxVisibleItems(len(DEFAULT_PRESETS))
+        self.preset_combo.setToolTip(
+            "Built-in feature-formula mappings. Selecting one applies its X, Y, Z, color, and size formulas."
+        )
         self.preset_combo.currentTextChanged.connect(self._apply_preset)
         self.load_preset_button = QPushButton("Load preset file")
         self.load_preset_button.clicked.connect(self.load_preset_dialog)
@@ -396,7 +460,7 @@ class MainWindow(QMainWindow):
         preset_actions_layout.setContentsMargins(0, 0, 0, 0)
         preset_actions_layout.addWidget(self.load_preset_button)
         preset_actions_layout.addWidget(self.save_preset_button)
-        preset_form.addRow("Preset", self.preset_combo)
+        preset_form.addRow("Feature formula", self.preset_combo)
         preset_form.addRow("Files", preset_actions)
         layout.addWidget(preset_group)
 
@@ -933,6 +997,7 @@ class MainWindow(QMainWindow):
             ("Ctrl+Shift+O", self.load_project_dialog),
             ("Ctrl+S", self.save_project_dialog),
             ("Ctrl+E", self.open_export_studio),
+            ("Ctrl+Shift+P", self.open_stage_output),
             ("Ctrl+Shift+E", self.export_data_dialog),
             ("Ctrl+L", self.open_live_input),
             ("F5", self.rebuild_geometry),
@@ -1936,6 +2001,160 @@ class MainWindow(QMainWindow):
         except Exception as exc:  # noqa: BLE001
             self._show_error("Could not open Export Studio", exc)
 
+    def _stage_output_layers(self) -> dict[str, QPixmap]:
+        """Capture existing canvases only; no duplicate analysis or 3D render."""
+
+        current = self.viewport.stack.currentWidget()
+        sources = {
+            "geometry": current,
+            "preview": self.analysis_dock.source_panel,
+            "spectrogram": self.analysis_dock.spectrogram,
+            "chromagram": self.analysis_dock.chromagram,
+            "mfcc": self.analysis_dock.mfcc,
+            "traces": self.analysis_dock.traces,
+        }
+        layers: dict[str, QPixmap] = {}
+        for name, widget in sources.items():
+            pixmap = widget.grab()
+            if not pixmap.isNull():
+                layers[name] = pixmap
+        return layers
+
+    def open_stage_output(self) -> None:
+        if self.analysis is None and (self.live_input_panel is None or not self.live_input_panel.engine.active):
+            QMessageBox.information(self, "Stage output", "Open a source or start Live Input before sending a stage display.")
+            return
+        dialog = StageOutputDialog(self.stage_output_config, export_layout=self.current_layout, parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self.stage_output_config = dialog.config()
+        self.settings.setValue("stage_output", json.dumps(self.stage_output_config.to_dict()))
+        if self.stage_output_window is None:
+            self.stage_output_window = StageOutputWindow(self._stage_output_layers, self.stage_output_config)
+            self.stage_output_window.closed.connect(lambda: setattr(self, "stage_output_window", None))
+        else:
+            self.stage_output_window.set_config(self.stage_output_config)
+        self.stage_output_window.show_on_selected_screen()
+        self._set_status("Stage Output is live on the selected display. Press Esc there to close it.")
+
+    # --------------------------------------------------------------- Updates
+    def check_for_updates(self) -> None:
+        self._start_update_check(manual=True)
+
+    def _background_update_check(self) -> None:
+        self._start_update_check(manual=False)
+
+    def _start_update_check(self, *, manual: bool) -> None:
+        if self.update_thread is not None:
+            return
+        self._manual_update_check = manual
+        self.update_button.setEnabled(False)
+        if manual:
+            self._set_status("Checking the Metriq GitHub releases…")
+        thread = QThread(self)
+        worker = UpdateWorker()
+        self.update_thread = thread
+        self.update_worker = worker
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._update_check_finished)
+        worker.failed.connect(self._update_check_failed)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._update_thread_finished)
+        thread.start()
+
+    @Slot(object)
+    def _update_check_finished(self, update: object) -> None:
+        if isinstance(update, UpdateInfo):
+            self._offer_update(update)
+        elif self._manual_update_check:
+            self._set_status("Metriq Visualizer is up to date.")
+
+    @Slot(str)
+    def _update_check_failed(self, message: str) -> None:
+        if self._manual_update_check:
+            self._set_status("Could not check for updates.")
+            QMessageBox.information(
+                self,
+                "Update check unavailable",
+                f"GitHub could not be reached. Your installed app was not changed.\n\n{message[:600]}",
+            )
+
+    def _update_thread_finished(self) -> None:
+        self.update_thread = None
+        self.update_worker = None
+        self.update_button.setEnabled(True)
+        pending = self._pending_update_install
+        self._pending_update_install = None
+        if pending is not None:
+            QTimer.singleShot(0, lambda: self._start_update_install(*pending))
+
+    def _offer_update(self, update: UpdateInfo) -> None:
+        bundle = installed_app_bundle()
+        if bundle is None:
+            QMessageBox.information(
+                self,
+                "Update available",
+                f"Metriq Visualizer {update.version} is available, but this source launch cannot replace itself. "
+                "Use the GitHub release asset to install it.",
+            )
+            return
+        reply = QMessageBox.question(
+            self,
+            "Metriq update available",
+            f"Version {update.version} is available from the official GitHub release.\n\n"
+            f"Download and install {update.asset_name}? The archive's GitHub SHA-256 digest and app signature "
+            "will be verified before Metriq restarts.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            # The metadata worker still owns update_thread until this slot
+            # returns. Queue installation after it has shut down instead of
+            # silently dropping the approved request as a duplicate task.
+            self._pending_update_install = (update, bundle)
+
+    def _start_update_install(self, update: UpdateInfo, bundle: Path) -> None:
+        if self.update_thread is not None:
+            return
+        self.update_button.setEnabled(False)
+        self._set_status("Downloading and verifying the Metriq update…")
+        thread = QThread(self)
+        worker = UpdateInstallWorker(update, bundle)
+        self.update_thread = thread
+        self.update_worker = worker
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._update_install_finished)
+        worker.failed.connect(self._update_install_failed)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._update_thread_finished)
+        thread.start()
+
+    @Slot(str)
+    def _update_install_finished(self, _script: str) -> None:
+        QMessageBox.information(
+            self,
+            "Update verified",
+            "The update is verified and ready. Metriq will now close, replace the app, and reopen the new version.",
+        )
+        QTimer.singleShot(150, QApplication.quit)
+
+    @Slot(str)
+    def _update_install_failed(self, details: str) -> None:
+        self._set_status("Update was not installed; your current app is unchanged.")
+        QMessageBox.warning(
+            self,
+            "Update verification failed",
+            f"The downloaded update was not installed. Your current app is unchanged.\n\n{details[-1200:]}",
+        )
+
     def open_live_input(self) -> None:
         try:
             if self.live_input_dock is None or self.live_input_panel is None:
@@ -1988,6 +2207,7 @@ class MainWindow(QMainWindow):
     def _live_active_changed(self, active: bool) -> None:
         self.viewport.set_live_mode(bool(active))
         self.viewport.set_motion_mode(bool(active) or self._live_proxy_active())
+        self.stage_output_button.setEnabled(bool(active) or self.analysis is not None)
         if active:
             self.source_badge.setText("LIVE / LOCAL MICROPHONE")
             self.preview_status.setText("LIVE 3D / STARTING / MICROPHONE")
@@ -2183,6 +2403,7 @@ class MainWindow(QMainWindow):
                 "refine_idle": self.refine_idle_check.isChecked(),
             },
             "layout": self.current_layout.to_dict(),
+            "stage_output": self.stage_output_config.to_dict(),
         }
         if include_session:
             state["session"] = {
@@ -2302,6 +2523,13 @@ class MainWindow(QMainWindow):
             layout_payload = state.get("layout")
             if isinstance(layout_payload, Mapping):
                 self.current_layout = ExportLayoutSpec.from_dict(layout_payload).clamp()
+
+            stage_payload = state.get("stage_output")
+            if isinstance(stage_payload, Mapping):
+                self.stage_output_config = StageOutputConfig.from_dict(stage_payload)
+                self.settings.setValue("stage_output", json.dumps(self.stage_output_config.to_dict()))
+                if self.stage_output_window is not None:
+                    self.stage_output_window.set_config(self.stage_output_config)
 
             session = state.get("session") if isinstance(state.get("session"), Mapping) else {}
             if "current_time" in session:
@@ -2444,6 +2672,7 @@ class MainWindow(QMainWindow):
         self.rebuild_button.setEnabled(self.analysis is not None)
         self.save_project_button.setEnabled(self.analysis is not None and self.source_path is not None)
         self.export_button.setEnabled(ready)
+        self.stage_output_button.setEnabled(ready)
         self.data_export_button.setEnabled(self.analysis is not None)
         if hasattr(self, "data_tab_export_button"):
             self.data_tab_export_button.setEnabled(self.analysis is not None)
@@ -2512,8 +2741,19 @@ class MainWindow(QMainWindow):
             )
             event.ignore()
             return
+        if self.update_thread is not None:
+            QMessageBox.information(
+                self,
+                "Update task in progress",
+                "Metriq is checking or verifying an update. Close the application after that task completes so the "
+                "verification thread can finish safely.",
+            )
+            event.ignore()
+            return
         if self.live_input_panel is not None:
             self.live_input_panel.shutdown()
+        if self.stage_output_window is not None:
+            self.stage_output_window.close()
         self.stop_playback()
         self.preview_timer.stop()
         self.playback_render_timer.stop()
