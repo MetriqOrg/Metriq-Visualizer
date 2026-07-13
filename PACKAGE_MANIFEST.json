@@ -2,7 +2,7 @@
   "schema": "metriq.complete-source-manifest",
   "schema_version": 1,
   "version": "1.12.6",
-  "generated_at": "2026-07-13T19:07:00+00:00",
+  "generated_at": "2026-07-13T19:10:00+00:00",
   "self_included": false,
   "file_count": 96,
   "total_bytes": 2822113,
@@ -23,7 +23,7 @@
       "path": ".github/workflows/quality.yml",
       "bytes": 1558,
       "mode": "0644",
-      "sha256": "7573bf1a5a5ee4a3379fcc9a9524d1af6e8f0fa1d1e4c2b4e214ecd32cd83442"
+      "sha256": "def1b161db79720a4cbb685ec24a1fe348f9e0a67380d2813a6b154881e6d4b8"
     },
     {
       "path": ".gitignore",
