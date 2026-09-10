@@ -2007,7 +2007,7 @@ class MainWindow(QMainWindow):
             self._show_error("Could not open Export Studio", exc)
 
     def _stage_output_layers(self) -> dict[str, QPixmap]:
-        """Capture existing canvases only; no duplicate analysis or 3D render."""
+        """Capture only enabled stage layers; QWidget.grab may trigger a paint."""
 
         current = self.viewport.stack.currentWidget()
         sources = {
@@ -2020,6 +2020,8 @@ class MainWindow(QMainWindow):
         }
         layers: dict[str, QPixmap] = {}
         for name, widget in sources.items():
+            if not self.stage_output_config.layout.item(name).enabled:
+                continue
             pixmap = widget.grab()
             if not pixmap.isNull():
                 layers[name] = pixmap

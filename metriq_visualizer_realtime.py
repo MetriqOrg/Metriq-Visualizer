@@ -19,7 +19,7 @@ from PySide6.QtCore import QLineF, QPointF, Qt, Signal
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPen, QWheelEvent
 from PySide6.QtWidgets import QWidget
 
-from metriq_visualizer_3d import compute_trail_state, interpolate_spline, scene_palette
+from metriq_visualizer_3d import _contiguous_runs, compute_trail_state, interpolate_spline, scene_palette
 from metriq_visualizer_core import AnalysisResult, GeometryResult
 
 
@@ -104,39 +104,53 @@ def media_path_segments(
     line_width: float,
     smooth: bool,
     detail: int,
+    source_indices: np.ndarray | None = None,
+    maximum_segments: int = 2400,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Build the responsive media path, interpolating every smooth trail.
+    """Build a bounded continuous path without bridging filtered source gaps.
 
-    ``compute_trail_state`` keeps separate segment buffers for the exact
-    Matplotlib renderer.  The realtime canvas instead derives its line from
-    the visible point trail so that selecting ``Smooth spline`` can never be
-    bypassed by a precomputed straight-segment buffer.
+    Reduce *vertices* before connecting them, never discard individual edges
+    from a connected spline.  Divide the budget across independent source runs
+    so separate filtered sections cannot be accidentally joined.
     """
 
     path_points = np.asarray(points, dtype=np.float64)
     path_rgba = np.asarray(rgba, dtype=np.float64)
-    if path_points.ndim != 2 or path_points.shape[0] < 2 or path_rgba.shape[0] != path_points.shape[0]:
-        return (
-            np.empty((0, 2, 3), dtype=np.float64),
-            np.empty((0, 4), dtype=np.float64),
-            np.empty(0, dtype=np.float64),
-        )
-
-    widths = np.full(path_points.shape[0], max(0.1, float(line_width)), dtype=np.float64)
-    if smooth and path_points.shape[0] >= 4:
-        # Four samples per original edge makes the curvature unmistakable in
-        # the live canvas while remaining safely below its segment budget.
-        path_points, path_rgba, widths = interpolate_spline(
-            path_points,
-            path_rgba,
-            widths,
-            max(4, int(detail)),
-        )
-    return (
-        np.stack((path_points[:-1], path_points[1:]), axis=1),
-        0.5 * (path_rgba[:-1] + path_rgba[1:]),
-        0.5 * (widths[:-1] + widths[1:]),
+    empty = (
+        np.empty((0, 2, 3), dtype=np.float64),
+        np.empty((0, 4), dtype=np.float64),
+        np.empty(0, dtype=np.float64),
     )
+    if path_points.ndim != 2 or path_points.shape[0] < 2 or path_rgba.shape != (path_points.shape[0], 4):
+        return empty
+    budget = max(1, int(maximum_segments))
+    indices = np.arange(path_points.shape[0]) if source_indices is None else np.asarray(source_indices).reshape(-1)
+    if indices.size != path_points.shape[0]:
+        raise ValueError("Source indices must align with path points")
+    runs = [run for run in _contiguous_runs(indices) if run.size >= 2]
+    if not runs:
+        return empty
+    if len(runs) > budget:
+        runs = [runs[index] for index in np.linspace(0, len(runs) - 1, budget, dtype=np.int64)]
+    # Reserve an edge per run, then distribute the rest proportionally.
+    weights = np.asarray([run.size - 1 for run in runs], dtype=np.float64)
+    shares = (budget - len(runs)) * weights / weights.sum()
+    allocations = 1 + np.floor(shares).astype(np.int64)
+    remainder = budget - int(allocations.sum())
+    allocations[np.argsort(-(shares - np.floor(shares)), kind="stable")[:remainder]] += 1
+    segments, colors, widths = [], [], []
+    for run, limit in zip(runs, allocations, strict=True):
+        run_points, run_rgba = path_points[run], path_rgba[run]
+        run_widths = np.full(run.size, max(0.1, float(line_width)), dtype=np.float64)
+        if smooth and run.size >= 4:
+            run_points, run_rgba, run_widths = interpolate_spline(run_points, run_rgba, run_widths, max(4, int(detail)))
+        if run_points.shape[0] > limit + 1:
+            keep = np.linspace(0, run_points.shape[0] - 1, int(limit) + 1, dtype=np.int64)
+            run_points, run_rgba, run_widths = run_points[keep], run_rgba[keep], run_widths[keep]
+        segments.append(np.stack((run_points[:-1], run_points[1:]), axis=1))
+        colors.append(0.5 * (run_rgba[:-1] + run_rgba[1:]))
+        widths.append(0.5 * (run_widths[:-1] + run_widths[1:]))
+    return np.concatenate(segments), np.concatenate(colors), np.concatenate(widths)
 
 
 class Realtime3DCanvas(QWidget):
@@ -154,6 +168,7 @@ class Realtime3DCanvas(QWidget):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.analysis: AnalysisResult | None = None
         self.geometry: GeometryResult | None = None
+        self._prepared_points = np.empty((0, 3), dtype=np.float64)
         self.options: Any = None
         self.theme_name = "dark"
         self.current_time = 0.0
@@ -188,6 +203,11 @@ class Realtime3DCanvas(QWidget):
     ) -> None:
         self.analysis = analysis
         self.geometry = geometry
+        self.current_time = 0.0
+        self._prepared_points = np.nan_to_num(
+            np.column_stack((geometry.x_full, geometry.y_full, geometry.z_full)).astype(np.float64, copy=False),
+            nan=0.0, posinf=0.0, neginf=0.0,
+        )
         self.options = options
         self.maximum_points = max(100, int(maximum_points))
         self._configure_bounds(
@@ -204,6 +224,8 @@ class Realtime3DCanvas(QWidget):
     def clear_scene(self) -> None:
         self.analysis = None
         self.geometry = None
+        self.current_time = 0.0
+        self._prepared_points = np.empty((0, 3), dtype=np.float64)
         self.options = None
         self._live_points = np.empty((0, 3), dtype=np.float64)
         self._live_rgba = np.empty((0, 4), dtype=np.float64)
@@ -246,41 +268,33 @@ class Realtime3DCanvas(QWidget):
         rgba: np.ndarray | None = None,
         sizes: np.ndarray | None = None,
     ) -> None:
-        values = np.asarray(points, dtype=np.float64).reshape(-1, 3)
-        finite = np.all(np.isfinite(values), axis=1)
-        values = values[finite]
-        if values.shape[0] > self.maximum_points:
-            values = values[-self.maximum_points :]
-            finite_indices = np.flatnonzero(finite)[-self.maximum_points :]
-        else:
-            finite_indices = np.flatnonzero(finite)
-        self._live_points = values
-        if rgba is None or np.asarray(rgba).size == 0:
+        raw = np.asarray(points, dtype=np.float64).reshape(-1, 3)
+        keep = np.flatnonzero(np.all(np.isfinite(raw), axis=1))[-self.maximum_points :]
+        values = raw[keep].copy()
+
+        def aligned(data: np.ndarray | None, columns: int) -> np.ndarray | None:
+            if data is None or np.asarray(data).size == 0:
+                return None
+            array = np.asarray(data, dtype=np.float64).reshape(-1, columns)
+            if array.shape[0] == 1:
+                return np.repeat(array, values.shape[0], axis=0)
+            if array.shape[0] != raw.shape[0]:
+                raise ValueError("Live colors and sizes must have one row or match the input point count")
+            return array[keep].copy()
+
+        # Validate everything before replacing the last good frame.  Callers
+        # may reuse their buffers immediately after this method returns.
+        colors = aligned(rgba, 4)
+        scale = aligned(sizes, 1)
+        if colors is None:
             progress = np.linspace(0.0, 1.0, values.shape[0], dtype=np.float64)
-            self._live_rgba = np.column_stack(
-                (
-                    0.12 + 0.58 * progress,
-                    0.72 + 0.24 * progress,
-                    0.72 - 0.28 * progress,
-                    0.18 + 0.82 * progress,
-                )
+            colors = np.column_stack(
+                (0.12 + 0.58 * progress, 0.72 + 0.24 * progress, 0.72 - 0.28 * progress, 0.18 + 0.82 * progress)
             )
-        else:
-            colors = np.asarray(rgba, dtype=np.float64).reshape(-1, 4)
-            self._live_rgba = (
-                colors[finite_indices]
-                if colors.shape[0] > int(np.max(finite_indices, initial=-1))
-                else colors[-values.shape[0] :]
-            )
-        if sizes is None or np.asarray(sizes).size == 0:
-            self._live_sizes = np.ones(values.shape[0], dtype=np.float64)
-        else:
-            scale = np.asarray(sizes, dtype=np.float64).reshape(-1)
-            self._live_sizes = (
-                scale[finite_indices]
-                if scale.size > int(np.max(finite_indices, initial=-1))
-                else scale[-values.shape[0] :]
-            )
+        colors = np.clip(np.nan_to_num(colors, nan=0.0, posinf=1.0, neginf=0.0), 0.0, 1.0)
+        scale = np.ones(values.shape[0]) if scale is None else scale.reshape(-1)
+        scale = np.maximum(0.0, np.nan_to_num(scale, nan=0.0, posinf=0.0, neginf=0.0))
+        self._live_points, self._live_rgba, self._live_sizes = values, colors, scale
         self._live_active = values.size > 0
         if self._live_active:
             self._configure_bounds(values, preserve=True)
@@ -557,6 +571,8 @@ class Realtime3DCanvas(QWidget):
             self.current_time,
             self.options,
             maximum_points=self.maximum_points,
+            prepared_points=self._prepared_points,
+            include_path_geometry=False,
         )
         mode = str(getattr(self.options, "render_mode", "Points + line")).casefold()
         show_points = "points" in mode or "tube" not in mode
@@ -573,9 +589,10 @@ class Realtime3DCanvas(QWidget):
                 line_width=max(1.0, float(getattr(self.options, "line_width", 1.35)) * 2.0),
                 smooth="smooth" in str(getattr(self.options, "path_curve_mode", "Straight")).casefold(),
                 detail=max(4, int(getattr(self.options, "curve_detail", 4))),
+                source_indices=self.geometry.source_indices_full[state.visible_idx],
             )
             self._draw_segments(painter, segments, segment_rgba, segment_widths)
-        if state.comet_segments.size:
+        if show_line and state.comet_segments.size:
             self._draw_segments(
                 painter,
                 state.comet_segments,
@@ -588,17 +605,22 @@ class Realtime3DCanvas(QWidget):
         if bool(getattr(self.options, "show_head_marker", True)) and state.visible_idx.size:
             point = self.project(state.head_point.reshape(1, 3))[0]
             painter.setPen(Qt.PenStyle.NoPen)
+            flash_scale = max(0.0, float(getattr(self.options, "flash_size_scale", 0.05))) / 0.05
+            halo_scale = max(0.0, float(getattr(self.options, "halo_size_scale", 0.45))) / 0.45
+            head_scale = max(0.0, float(getattr(self.options, "head_size_scale", 0.24))) / 0.24
             flash = _qcolor(state.head_flash_rgba)
-            if flash.alphaF() > 0.0 and state.head_flash_size > 0.0:
+            if flash_scale > 0.0 and flash.alphaF() > 0.0 and state.head_flash_size > 0.0:
                 painter.setBrush(flash)
-                radius = float(np.clip(math.sqrt(state.head_flash_size) * 0.65, 5.0, 42.0))
+                radius = float(np.clip(math.sqrt(state.head_flash_size) * 0.65, 5.0, 42.0)) * math.sqrt(flash_scale)
                 painter.drawEllipse(QPointF(point[0], point[1]), radius, radius)
-            painter.setBrush(_qcolor(state.head_halo_rgba))
-            halo = float(np.clip(math.sqrt(state.head_size) * 1.15, 6.0, 24.0))
-            painter.drawEllipse(QPointF(point[0], point[1]), halo, halo)
-            painter.setBrush(_qcolor(state.head_rgba))
-            head = float(np.clip(math.sqrt(state.head_size) * 0.46, 2.5, 10.0))
-            painter.drawEllipse(QPointF(point[0], point[1]), head, head)
+            if halo_scale > 0.0:
+                painter.setBrush(_qcolor(state.head_halo_rgba))
+                halo = float(np.clip(math.sqrt(state.head_size) * 1.15, 6.0, 24.0)) * math.sqrt(halo_scale)
+                painter.drawEllipse(QPointF(point[0], point[1]), halo, halo)
+            if head_scale > 0.0:
+                painter.setBrush(_qcolor(state.head_rgba))
+                head = float(np.clip(math.sqrt(state.head_size) * 0.46, 2.5, 10.0)) * math.sqrt(head_scale)
+                painter.drawEllipse(QPointF(point[0], point[1]), head, head)
 
     def paintEvent(self, _event: Any) -> None:  # type: ignore[override]
         started = perf_counter()
@@ -616,7 +638,8 @@ class Realtime3DCanvas(QWidget):
         font.setFamily("monospace")
         font.setPointSizeF(7.5)
         painter.setFont(font)
-        painter.drawText(12, max(18, self.height() - 12), "DRAG ORBIT  ·  SCROLL ZOOM  ·  EXACT SCENE WHEN PAUSED")
+        if bool(getattr(self.options, "show_scene_hud", True)):
+            painter.drawText(12, max(18, self.height() - 12), "DRAG ORBIT  ·  SCROLL ZOOM  ·  EXACT SCENE WHEN PAUSED")
         painter.end()
         self.frameRendered.emit(max(0.0, (perf_counter() - started) * 1000.0))
 

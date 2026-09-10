@@ -220,8 +220,12 @@ def _visible_indices(
         start = int(np.searchsorted(values, now - lifespan, side="left"))
         if start >= stop:
             start = max(0, stop - 1)
-    indices = np.arange(start, stop, dtype=np.int64)
-    indices = _downsample(indices, maximum)
+    # Construct only the requested samples, not the entire cumulative history.
+    count = stop - start
+    if maximum > 0 and count > maximum:
+        indices = start + np.linspace(0, count - 1, int(maximum), dtype=np.int64)
+    else:
+        indices = np.arange(start, stop, dtype=np.int64)
     if head_index not in indices:
         if maximum > 0 and indices.size >= maximum:
             replace = int(np.argmin(np.abs(indices - head_index)))
@@ -274,32 +278,25 @@ def _catmull_rom(
     if detail <= 1:
         return values, rgba, size_values
     padded = np.vstack((values[0], values, values[-1]))
-    padded_rgba = np.vstack((rgba[0], rgba, rgba[-1]))
-    padded_widths = np.concatenate(([size_values[0]], size_values, [size_values[-1]]))
-    out_points: list[np.ndarray] = []
-    out_rgba: list[np.ndarray] = []
-    out_widths: list[float] = []
-    for index in range(1, padded.shape[0] - 2):
-        p0, p1, p2, p3 = padded[index - 1 : index + 3]
-        c1, c2 = padded_rgba[index], padded_rgba[index + 1]
-        w1, w2 = padded_widths[index], padded_widths[index + 1]
-        for step in range(detail):
-            t = step / detail
-            t2 = t * t
-            t3 = t2 * t
-            point = 0.5 * (
-                (2.0 * p1)
-                + (-p0 + p2) * t
-                + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
-                + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3
-            )
-            out_points.append(point)
-            out_rgba.append((1.0 - t) * c1 + t * c2)
-            out_widths.append(float((1.0 - t) * w1 + t * w2))
-    out_points.append(values[-1])
-    out_rgba.append(rgba[-1])
-    out_widths.append(float(size_values[-1]))
-    return np.asarray(out_points), np.asarray(out_rgba), np.asarray(out_widths)
+    # Evaluate the same polynomial in bounded NumPy batches.  Keep the
+    # original sampling order, color/width interpolation and exact endpoint.
+    p0, p1, p2, p3 = (padded[offset : offset + values.shape[0] - 1, None, :] for offset in range(4))
+    t = (np.arange(detail, dtype=np.float64) / detail)[None, :, None]
+    t2, t3 = t * t, t * t * t
+    interpolated = 0.5 * (
+        (2.0 * p1)
+        + (-p0 + p2) * t
+        + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
+        + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3
+    )
+    interpolated_rgba = (1.0 - t) * rgba[:-1, None, :] + t * rgba[1:, None, :]
+    wt = t[:, :, 0]
+    interpolated_widths = (1.0 - wt) * size_values[:-1, None] + wt * size_values[1:, None]
+    return (
+        np.concatenate((interpolated.reshape(-1, values.shape[1]), values[-1:])),
+        np.concatenate((interpolated_rgba.reshape(-1, rgba.shape[1]), rgba[-1:])),
+        np.concatenate((interpolated_widths.reshape(-1), size_values[-1:])),
+    )
 
 
 def interpolate_spline(
@@ -397,8 +394,14 @@ def compute_trail_state(
     *,
     maximum_points: int = 2200,
     prepared_points: np.ndarray | None = None,
+    include_path_geometry: bool = True,
 ) -> TrailState:
-    """Compute the display state used by both Qt and export canvases."""
+    """Compute shared temporal state; optionally omit the exact path/mesh.
+
+    Realtime canvases build their own bounded path.  They still receive the
+    same point, head, fade and comet state without building discarded meshes.
+    Export and paused inspection retain full path geometry by default.
+    """
 
     indices = _visible_indices(
         geometry.times_full,
@@ -462,11 +465,12 @@ def compute_trail_state(
     tube_face_chunks: list[np.ndarray] = []
     tube_color_chunks: list[np.ndarray] = []
 
-    axis_span = float(np.max(np.ptp(all_points, axis=0))) if all_points.size else 1.0
-    axis_span = max(axis_span, 1e-6)
-    tube_base_radius = axis_span * 0.0065
+    tube_base_radius = 0.0
+    if include_path_geometry and connect_lines and "tube" in render_mode:
+        axis_span = float(np.max(np.ptp(all_points, axis=0))) if all_points.size else 1.0
+        tube_base_radius = max(axis_span, 1e-6) * 0.0065
 
-    if connect_lines:
+    if include_path_geometry and connect_lines:
         source_values = geometry.source_indices_full[indices]
         for run in _contiguous_runs(source_values):
             if run.size < 2:
@@ -1173,7 +1177,7 @@ class Interactive3DViewport(QWidget):
             self.realtime.update()
         elif self.scene is not None:
             self.stack.setCurrentWidget(self.canvas)
-            self.scene.update_time(self.scene.current_time, draw=True)
+            self.scene.update_time(self.realtime.current_time, draw=True)
         else:
             self.stack.setCurrentWidget(self.placeholder)
         self._sync_autorotate_timer()
