@@ -1,0 +1,1 @@
+Run the refined native mobile GPU foundation through Qt 6.8.3 C++, QML, QSB shader, native-test, and software-fallback startup validation on Linux x86_64, Windows x86_64, and Apple Silicon macOS.
