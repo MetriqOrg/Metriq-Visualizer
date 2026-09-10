@@ -1,0 +1,164 @@
+name: Polish mobile runtime lifecycle
+
+on:
+  push:
+    branches:
+      - codex/visualizer-mobile-gpu-foundation-v2
+    paths:
+      - '.github/workflows/mobile-runtime-polish.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  polish:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      QT_QPA_PLATFORM: offscreen
+      QSG_RHI_BACKEND: software
+      QML_DISABLE_DISK_CACHE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/visualizer-mobile-gpu-foundation-v2
+          fetch-depth: 0
+
+      - name: Apply idempotent runtime polish
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text, old, new, path):
+              if new in text:
+                  return text
+              if old not in text:
+                  raise SystemExit(f'expected fragment missing in {path}: {old!r}')
+              return text.replace(old, new)
+
+          path = Path('mobile/src/VisualizerItem.cpp')
+          text = path.read_text(encoding='utf-8')
+          text = replace_once(
+              text,
+              '#include <QSGRendererInterface>\n',
+              '#include <QSGRendererInterface>\n#include <QQuickWindow>\n',
+              path,
+          )
+          text = replace_once(
+              text,
+              '    QVector<float> times;\n'
+              '    quint64 revision = std::numeric_limits<quint64>::max();',
+              '    QVector<float> times;\n'
+              '    float trailLineWidth = -1.0F;\n'
+              '    quint64 revision = std::numeric_limits<quint64>::max();',
+              path,
+          )
+          text = replace_once(
+              text,
+              '        setVertices(scene->trail, vertices, QSGGeometry::DrawLineStrip, snapshot.lineWidth);\n'
+              '        setVertices(scene->points, vertices, QSGGeometry::DrawPoints);',
+              '        setVertices(scene->trail, vertices, QSGGeometry::DrawLineStrip, snapshot.lineWidth);\n'
+              '        scene->trailLineWidth = snapshot.lineWidth;\n'
+              '        setVertices(scene->points, vertices, QSGGeometry::DrawPoints);',
+              path,
+          )
+          text = replace_once(
+              text,
+              '    setVertices(scene->head, headVertex, QSGGeometry::DrawPoints);\n'
+              '    scene->trail->geometry()->setLineWidth(snapshot.lineWidth);\n'
+              '    scene->trail->markDirty(QSGNode::DirtyGeometry);\n\n'
+              '    const QString renderMode',
+              '    setVertices(scene->head, headVertex, QSGGeometry::DrawPoints);\n'
+              '    const float deviceScale = window() ? static_cast<float>(window()->devicePixelRatio()) : 1.0F;\n'
+              '    const float physicalLineWidth = snapshot.lineWidth * std::max(deviceScale, 1.0F);\n'
+              '    if (!qFuzzyCompare(scene->trailLineWidth + 1.0F, physicalLineWidth + 1.0F)) {\n'
+              '        scene->trail->geometry()->setLineWidth(physicalLineWidth);\n'
+              '        scene->trail->markDirty(QSGNode::DirtyGeometry);\n'
+              '        scene->trailLineWidth = physicalLineWidth;\n'
+              '    }\n\n'
+              '    const QString renderMode',
+              path,
+          )
+          text = replace_once(
+              text,
+              '    configureMaterial(scene->points, snapshot, viewport, showPoints ? 1.0F : 0.0F, 1.0F);\n'
+              '    configureMaterial(scene->head, snapshot, viewport,\n'
+              '                      snapshot.showHeadMarker ? 1.0F : 0.0F, 2.8F, -1.0F);',
+              '    configureMaterial(scene->points, snapshot, viewport, showPoints ? 1.0F : 0.0F, std::max(deviceScale, 1.0F));\n'
+              '    configureMaterial(scene->head, snapshot, viewport,\n'
+              '                      snapshot.showHeadMarker ? 1.0F : 0.0F, 2.8F * std::max(deviceScale, 1.0F), -1.0F);',
+              path,
+          )
+          path.write_text(text, encoding='utf-8')
+
+          path = Path('mobile/qml/Main.qml')
+          text = path.read_text(encoding='utf-8')
+          text = replace_once(
+              text,
+              '        running: visualizerModel.playing && !audioEngine.active\n',
+              '        running: visualizerModel.playing && !audioEngine.active\n'
+              '                 && Qt.application.state === Qt.ApplicationActive\n',
+              path,
+          )
+          anchor = '''    Connections {
+        target: audioEngine
+        function onErrorChanged() {
+            if (audioEngine.errorMessage.length > 0)
+                root.showToast(audioEngine.errorMessage)
+        }
+    }
+'''
+          addition = '''    Connections {
+        target: Qt.application
+        function onStateChanged() {
+            if (Qt.application.state !== Qt.ApplicationActive && audioEngine.active)
+                audioEngine.stop()
+        }
+    }
+
+'''
+          if addition not in text:
+              if anchor not in text:
+                  raise SystemExit('audio connection anchor missing in Main.qml')
+              text = text.replace(anchor, anchor + '\n' + addition)
+          path.write_text(text, encoding='utf-8')
+
+          path = Path('docs/MOBILE_GPU_FOUNDATION.md')
+          text = path.read_text(encoding='utf-8')
+          marker = 'A software-renderer fallback uses the same model and projection contract.'
+          if marker in text and 'Application backgrounding stops live microphone capture' not in text:
+              text = text.replace(
+                  marker,
+                  marker + ' Application backgrounding stops live microphone capture and playback frame scheduling, so hidden mobile work does not continue indefinitely.',
+              )
+          path.write_text(text, encoding='utf-8')
+          PY
+          git diff --check
+
+      - name: Install Linux runtime and Qt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev libegl1 libxkbcommon-x11-0 libxcb-cursor0 libpulse0 libasound2 ninja-build
+
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          arch: linux_gcc_64
+          modules: 'qtmultimedia qtshadertools'
+          cache: true
+
+      - name: Build, test, and smoke-start polished source
+        run: |
+          cmake -S mobile -B mobile/build-polish -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+          cmake --build mobile/build-polish --parallel 2
+          ctest --test-dir mobile/build-polish --output-on-failure
+          python mobile/tools/smoke_start.py mobile/build-polish --seconds 2.0
+
+      - name: Commit polished validated source
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add mobile/src/VisualizerItem.cpp mobile/qml/Main.qml docs/MOBILE_GPU_FOUNDATION.md
+          git diff --cached --check
+          git commit -m 'Avoid retained buffer uploads and background work on mobile'
+          git push origin HEAD:codex/visualizer-mobile-gpu-foundation-v2
