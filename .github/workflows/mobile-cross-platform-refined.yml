@@ -1,0 +1,140 @@
+name: Refined mobile GPU host validation
+
+on:
+  push:
+    branches:
+      - codex/visualizer-mobile-gpu-foundation-v2
+    paths:
+      - 'mobile/REQUEST_REFINED_VALIDATION.txt'
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Refined validation (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            label: linux-x86_64
+            qt_arch: linux_gcc_64
+          - os: windows-2022
+            label: windows-x86_64
+            qt_arch: win64_msvc2022_64
+          - os: macos-14
+            label: macos-arm64
+            qt_arch: clang_64
+    env:
+      QT_QPA_PLATFORM: offscreen
+      QSG_RHI_BACKEND: software
+      QML_DISABLE_DISK_CACHE: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/visualizer-mobile-gpu-foundation-v2
+          fetch-depth: 0
+
+      - name: Install Linux libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev libegl1 libxkbcommon-x11-0 libxcb-cursor0 libpulse0 libasound2 ninja-build
+
+      - uses: jurplel/install-qt-action@v4
+        name: Install Qt 6.8.3
+        with:
+          version: '6.8.3'
+          arch: ${{ matrix.qt_arch }}
+          modules: 'qtmultimedia qtshadertools'
+          cache: true
+
+      - name: Configure and build
+        run: |
+          cmake -S mobile -B mobile/build-refined-host -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+          cmake --build mobile/build-refined-host --parallel 2
+
+      - name: Test and smoke-start
+        run: |
+          ctest --test-dir mobile/build-refined-host --output-on-failure
+          python mobile/tools/smoke_start.py mobile/build-refined-host --seconds 2.0
+
+      - name: Write host marker
+        shell: bash
+        run: |
+          mkdir -p host-result
+          printf '%s\n' \
+            '{' \
+            '  "host": "${{ matrix.label }}",' \
+            '  "qt": "6.8.3",' \
+            '  "native_build": "passed",' \
+            '  "qml_qsb_build": "passed",' \
+            '  "native_tests": "passed",' \
+            '  "software_fallback_startup": "passed"' \
+            '}' > host-result/${{ matrix.label }}.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: refined-mobile-${{ matrix.label }}
+          path: host-result/${{ matrix.label }}.json
+          if-no-files-found: error
+          retention-days: 7
+
+  record:
+    needs: validate
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/visualizer-mobile-gpu-foundation-v2
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: refined-mobile-*
+          path: host-results
+          merge-multiple: true
+
+      - name: Record cross-platform result
+        run: |
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          records = {}
+          for path in Path('host-results').glob('*.json'):
+              value = json.loads(path.read_text(encoding='utf-8'))
+              records[value['host']] = value
+          expected = {'linux-x86_64', 'windows-x86_64', 'macos-arm64'}
+          if set(records) != expected:
+              raise SystemExit(f'missing host records: expected {expected}, got {set(records)}')
+          payload = {
+              'schema': 'metriq.mobile-refined-host-validation',
+              'schema_version': 1,
+              'generated_at': datetime.now(timezone.utc).isoformat(),
+              'foundation_version': '0.1.0',
+              'all_checks_passed': True,
+              'hosts': records,
+              'limitations': [
+                  'Host/offscreen validation is not physical Android or iOS device certification',
+                  'GPU shaders were compiled, while physical Metal/Vulkan rendering remains a device gate',
+                  'No production signing or store submission was performed'
+              ]
+          }
+          Path('mobile/VALIDATION_REFINED_HOSTS.json').write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          PY
+
+      - name: Commit result
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add mobile/VALIDATION_REFINED_HOSTS.json
+          git diff --cached --check
+          git commit -m 'Record refined mobile host validation on Linux Windows and macOS'
+          git push origin HEAD:codex/visualizer-mobile-gpu-foundation-v2
