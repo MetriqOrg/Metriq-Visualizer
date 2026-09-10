@@ -1,0 +1,154 @@
+name: Finalize native mobile source
+
+on:
+  push:
+    branches:
+      - codex/visualizer-mobile-gpu-foundation-v2
+    paths:
+      - '.github/workflows/mobile-source-finalize.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      QT_QPA_PLATFORM: offscreen
+      QSG_RHI_BACKEND: software
+      QML_DISABLE_DISK_CACHE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/visualizer-mobile-gpu-foundation-v2
+          fetch-depth: 0
+
+      - name: Apply compile portability fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text(encoding='utf-8')
+              if old not in text:
+                  raise SystemExit(f'expected source fragment missing in {path}: {old!r}')
+              file.write_text(text.replace(old, new), encoding='utf-8')
+
+          path = Path('mobile/src/VisualizerModel.cpp')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace('#include <QFileInfo>\n', '#include <QFileInfo>\n#include <QHash>\n')
+          text = text.replace('#include <limits>\n', '#include <limits>\n#include <numbers>\n#include <utility>\n')
+          text = text.replace('static_cast<float>(M_PI)', 'std::numbers::pi_v<float>')
+          text = text.replace('std::remainder<qreal>(', 'std::remainder(')
+          text = text.replace(
+              'geometry.insert(QStringLiteral("max_points"), qMax(1, m_points.size()));',
+              'geometry.insert(QStringLiteral("max_points"), static_cast<double>(std::max<qsizetype>(1, m_points.size())));',
+          )
+          path.write_text(text, encoding='utf-8')
+
+          path = Path('mobile/src/CpuVisualizerItem.cpp')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace('#include <cmath>\n', '#include <cmath>\n#include <iterator>\n')
+          text = text.replace(
+              'connect(m_model, &VisualizerModel::geometryChanged, this, qOverload<>(&CpuVisualizerItem::update));\n'
+              '        connect(m_model, &VisualizerModel::currentTimeChanged, this, qOverload<>(&CpuVisualizerItem::update));\n'
+              '        connect(m_model, &VisualizerModel::visualChanged, this, qOverload<>(&CpuVisualizerItem::update));',
+              'connect(m_model, &VisualizerModel::geometryChanged, this, [this]() { update(); });\n'
+              '        connect(m_model, &VisualizerModel::currentTimeChanged, this, [this]() { update(); });\n'
+              '        connect(m_model, &VisualizerModel::visualChanged, this, [this]() { update(); });',
+          )
+          path.write_text(text, encoding='utf-8')
+
+          path = Path('mobile/src/AudioFeatureEngine.h')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace('#include <QAudioFormat>\n', '#include <QAudioFormat>\n#include <QByteArray>\n')
+          path.write_text(text, encoding='utf-8')
+
+          path = Path('mobile/tests/tst_mobile_core.cpp')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace(
+              '    QCOMPARE(a.positions.constFirst(), a.positions.constFirst());',
+              '    QCOMPARE(a.positions.constFirst(), b.positions.constFirst());',
+          )
+          text = text.replace(
+              'void MobileCoreTests::audioWorkerFindsAResolvableTone()\n{\n    AudioAnalyzerWorker worker;',
+              'void MobileCoreTests::audioWorkerFindsAResolvableTone()\n{\n    qRegisterMetaType<AudioFeatureFrame>();\n    AudioAnalyzerWorker worker;',
+          )
+          path.write_text(text, encoding='utf-8')
+          PY
+          git diff --check
+
+      - name: Install Linux runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev libegl1 libxkbcommon-x11-0 libxcb-cursor0 libpulse0 libasound2 ninja-build
+
+      - name: Install Qt 6.8.3
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          arch: linux_gcc_64
+          modules: 'qtmultimedia qtshadertools'
+          cache: true
+
+      - name: Configure, compile, test, and smoke-start
+        shell: bash
+        run: |
+          cmake -S mobile -B mobile/build-finalize -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+          cmake --build mobile/build-finalize --parallel 2
+          ctest --test-dir mobile/build-finalize --output-on-failure
+          python mobile/tools/smoke_start.py mobile/build-finalize --seconds 2.0
+
+      - name: Record validated source revision
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import platform
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          tracked = sorted(
+              p for p in Path('mobile').rglob('*')
+              if p.is_file() and 'build-' not in p.as_posix() and '/.qt/' not in p.as_posix()
+          )
+          payload = {
+              'schema': 'metriq.mobile-host-validation',
+              'schema_version': 1,
+              'generated_at': datetime.now(timezone.utc).isoformat(),
+              'foundation_version': '0.1.0',
+              'host': platform.platform(),
+              'python': platform.python_version(),
+              'qt': '6.8.3',
+              'checks': {
+                  'cmake_configure': 'passed',
+                  'cxx_qml_qsb_build': 'passed',
+                  'ctest': 'passed',
+                  'software_fallback_startup': 'passed',
+              },
+              'files': {
+                  p.as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                  for p in tracked
+              },
+              'limitations': [
+                  'Linux host validation only in this record',
+                  'No physical mobile GPU or microphone exercised',
+                  'No signed Android or iOS package produced',
+              ],
+          }
+          Path('mobile/VALIDATION_LINUX.json').write_text(json.dumps(payload, indent=2) + '\n', encoding='utf-8')
+          PY
+
+      - name: Commit validated source fixes
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add mobile/src/VisualizerModel.cpp mobile/src/CpuVisualizerItem.cpp mobile/src/AudioFeatureEngine.h mobile/tests/tst_mobile_core.cpp mobile/VALIDATION_LINUX.json
+          git diff --cached --check
+          git commit -m 'Finalize and validate native mobile source on Linux'
+          git push origin HEAD:codex/visualizer-mobile-gpu-foundation-v2
