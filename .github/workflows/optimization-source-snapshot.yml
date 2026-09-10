@@ -1,0 +1,23 @@
+name: Optimization source snapshot
+
+on:
+  push:
+    branches: [codex/visualizer-rendering-optimization]
+    paths: [.github/workflows/optimization-source-snapshot.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Archive tracked source for reproducible local validation
+        run: git archive --format=zip --output=visualizer-source.zip HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: visualizer-optimization-source
+          path: visualizer-source.zip
+          retention-days: 1
+          if-no-files-found: error
