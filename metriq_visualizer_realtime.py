@@ -16,7 +16,7 @@ from typing import Any
 
 import numpy as np
 from PySide6.QtCore import QLineF, QPointF, Qt, Signal
-from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPen, QWheelEvent
+from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPen, QPixmap, QWheelEvent
 from PySide6.QtWidgets import QWidget
 
 from metriq_visualizer_3d import _contiguous_runs, compute_trail_state, interpolate_spline, scene_palette
@@ -169,6 +169,10 @@ class Realtime3DCanvas(QWidget):
         self.analysis: AnalysisResult | None = None
         self.geometry: GeometryResult | None = None
         self._prepared_points = np.empty((0, 3), dtype=np.float64)
+        self._frame_revision = 0
+        self._frame_key: tuple | None = None
+        self._frame_pixmap = QPixmap()
+        self.frame_cache_limit_bytes = 32 * 1024 * 1024
         self.options: Any = None
         self.theme_name = "dark"
         self.current_time = 0.0
@@ -201,6 +205,7 @@ class Realtime3DCanvas(QWidget):
         *,
         maximum_points: int = 1200,
     ) -> None:
+        self._invalidate_frame()
         self.analysis = analysis
         self.geometry = geometry
         self.current_time = 0.0
@@ -222,6 +227,7 @@ class Realtime3DCanvas(QWidget):
         self.update()
 
     def clear_scene(self) -> None:
+        self._invalidate_frame()
         self.analysis = None
         self.geometry = None
         self.current_time = 0.0
@@ -240,8 +246,10 @@ class Realtime3DCanvas(QWidget):
         self.update()
 
     def set_time(self, current_time: float) -> None:
-        self.current_time = max(0.0, float(current_time))
-        self.update()
+        value = max(0.0, float(current_time))
+        if value != self.current_time:
+            self.current_time = value
+            self.update()
 
     def set_camera(
         self,
@@ -294,6 +302,7 @@ class Realtime3DCanvas(QWidget):
         colors = np.clip(np.nan_to_num(colors, nan=0.0, posinf=1.0, neginf=0.0), 0.0, 1.0)
         scale = np.ones(values.shape[0]) if scale is None else scale.reshape(-1)
         scale = np.maximum(0.0, np.nan_to_num(scale, nan=0.0, posinf=0.0, neginf=0.0))
+        self._invalidate_frame()
         self._live_points, self._live_rgba, self._live_sizes = values, colors, scale
         self._live_active = values.size > 0
         if self._live_active:
@@ -301,6 +310,7 @@ class Realtime3DCanvas(QWidget):
         self.update()
 
     def clear_live_trajectory(self) -> None:
+        self._invalidate_frame()
         self._live_points = np.empty((0, 3), dtype=np.float64)
         self._live_rgba = np.empty((0, 4), dtype=np.float64)
         self._live_sizes = np.empty(0, dtype=np.float64)
@@ -622,10 +632,14 @@ class Realtime3DCanvas(QWidget):
                 head = float(np.clip(math.sqrt(state.head_size) * 0.46, 2.5, 10.0)) * math.sqrt(head_scale)
                 painter.drawEllipse(QPointF(point[0], point[1]), head, head)
 
-    def paintEvent(self, _event: Any) -> None:  # type: ignore[override]
-        started = perf_counter()
+    def _invalidate_frame(self) -> None:
+        """Release the single retained raster on source/buffer replacement."""
+        self._frame_revision += 1
+        self._frame_key = None
+        self._frame_pixmap = QPixmap()
+
+    def _paint_scene(self, painter: QPainter) -> None:
         palette = scene_palette(self.theme_name)
-        painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.fillRect(self.rect(), QColor(palette.figure_background))
         self._draw_grid(painter)
@@ -640,8 +654,61 @@ class Realtime3DCanvas(QWidget):
         painter.setFont(font)
         if bool(getattr(self.options, "show_scene_hud", True)):
             painter.drawText(12, max(18, self.height() - 12), "DRAG ORBIT  ·  SCROLL ZOOM  ·  EXACT SCENE WHEN PAUSED")
-        painter.end()
-        self.frameRendered.emit(max(0.0, (perf_counter() - started) * 1000.0))
+
+    def _cached_frame(self) -> QPixmap | None:
+        # One exact-resolution frame, not a growing history. Oversized displays
+        # retain direct painting rather than silently lowering resolution.
+        self.ensurePolished()
+        ratio = max(1.0, float(self.devicePixelRatioF()))
+        width = max(1, math.ceil(self.width() * ratio))
+        height = max(1, math.ceil(self.height() * ratio))
+        if width * height * 4 > self.frame_cache_limit_bytes:
+            self._frame_key = None
+            self._frame_pixmap = QPixmap()
+            return None
+        key = (self._frame_revision, self.current_time, self.elevation, self.azimuth,
+               self.zoom, self.maximum_points, self.theme_name, self._live_active,
+               self.width(), self.height(), ratio, self.font().key(), repr(self.options))
+        if key != self._frame_key or self._frame_pixmap.isNull():
+            started = perf_counter()
+            # Release our reference before allocation; snapshots handed to stage
+            # output remain valid through Qt's implicit sharing.
+            self._frame_pixmap = QPixmap()
+            frame = QPixmap(width, height)
+            if frame.isNull():
+                return None
+            frame.setDevicePixelRatio(ratio)
+            frame.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(frame)
+            painter.setFont(self.font())
+            try:
+                self._paint_scene(painter)
+            finally:
+                painter.end()
+            self._frame_pixmap, self._frame_key = frame, key
+            # Cached copies must not masquerade as cheap newly-rendered frames
+            # and cause adaptive density to oscillate.
+            self.frameRendered.emit(max(0.0, (perf_counter() - started) * 1000.0))
+        return self._frame_pixmap
+
+    def snapshot(self) -> QPixmap:
+        """Return the same current frame used by the viewport, without repainting."""
+        frame = self._cached_frame()
+        return QPixmap(frame) if frame is not None else self.grab()
+
+    def paintEvent(self, _event: Any) -> None:  # type: ignore[override]
+        frame = self._cached_frame()
+        started = perf_counter()
+        painter = QPainter(self)
+        try:
+            if frame is None:
+                self._paint_scene(painter)
+            else:
+                painter.drawPixmap(0, 0, frame)
+        finally:
+            painter.end()
+        if frame is None:
+            self.frameRendered.emit(max(0.0, (perf_counter() - started) * 1000.0))
 
     # ------------------------------------------------------------- interaction
     def mousePressEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]

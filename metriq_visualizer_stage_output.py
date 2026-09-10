@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QRectF, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QEvent, QRectF, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QImage, QKeyEvent, QPainter, QPaintEvent, QPixmap
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoSink
 from PySide6.QtWidgets import (
@@ -144,6 +144,7 @@ class StageOutputWindow(QWidget):
 
     def __init__(self, layer_provider: Callable[[], Mapping[str, QPixmap]], config: StageOutputConfig) -> None:
         super().__init__(None, Qt.WindowType.Window)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.setObjectName("MetriqStageOutput")
         self.setWindowTitle("Metriq Visualizer · Stage Output")
         self.setMinimumSize(640, 360)
@@ -151,13 +152,10 @@ class StageOutputWindow(QWidget):
         self.config = config.clone()
         self._background_image = QImage()
         self._video_frame = QImage()
-        self._video_audio = QAudioOutput(self)
-        self._video_audio.setVolume(0.0)
-        self._video_player = QMediaPlayer(self)
-        self._video_player.setAudioOutput(self._video_audio)
-        self._video_sink = QVideoSink(self)
-        self._video_sink.videoFrameChanged.connect(self._video_frame_changed)
-        self._video_player.setVideoOutput(self._video_sink)
+        # A color/image background does not need a decoder or audio backend.
+        self._video_audio: QAudioOutput | None = None
+        self._video_player: QMediaPlayer | None = None
+        self._video_sink: QVideoSink | None = None
         self._refresh_timer = QTimer(self)
         self._refresh_timer.timeout.connect(self.update)
         self.set_config(config)
@@ -166,16 +164,60 @@ class StageOutputWindow(QWidget):
         self.config = config.clone().clamp()
         self._background_image = QImage()
         self._video_frame = QImage()
-        self._video_player.stop()
+        self._release_video()
         path = Path(self.config.background_path).expanduser()
         if self.config.background_kind == "image" and path.is_file():
             self._background_image = QImage(str(path))
         elif self.config.background_kind == "video" and path.is_file():
+            self._video_audio = QAudioOutput(self)
+            self._video_audio.setVolume(0.0)
+            self._video_player = QMediaPlayer(self)
+            self._video_player.setAudioOutput(self._video_audio)
+            self._video_sink = QVideoSink(self)
+            self._video_sink.videoFrameChanged.connect(self._video_frame_changed)
+            self._video_player.setVideoOutput(self._video_sink)
             self._video_player.setSource(QUrl.fromLocalFile(str(path.resolve())))
             self._video_player.setLoops(QMediaPlayer.Loops.Infinite)
-            self._video_player.play()
-        self._refresh_timer.start(max(33, round(1000 / self.config.refresh_fps)))
+        self._sync_activity()
         self.update()
+
+    def _release_video(self) -> None:
+        if self._video_player is not None:
+            self._video_player.stop()
+            self._video_player.setSource(QUrl())
+            self._video_player.setVideoOutput(None)
+            self._video_player.deleteLater()
+        if self._video_sink is not None:
+            self._video_sink.videoFrameChanged.disconnect(self._video_frame_changed)
+            self._video_sink.deleteLater()
+        if self._video_audio is not None:
+            self._video_audio.deleteLater()
+        self._video_player = self._video_audio = self._video_sink = None
+
+    def _sync_activity(self) -> None:
+        active = self.isVisible() and not self.isMinimized()
+        if active:
+            self._refresh_timer.start(max(33, round(1000 / self.config.refresh_fps)))
+        else:
+            self._refresh_timer.stop()
+        if self._video_player is not None:
+            if active:
+                self._video_player.play()
+            else:
+                self._video_player.pause()
+
+    def showEvent(self, event) -> None:  # type: ignore[override]
+        super().showEvent(event)
+        self._sync_activity()
+
+    def hideEvent(self, event) -> None:  # type: ignore[override]
+        super().hideEvent(event)
+        self._sync_activity()
+
+    def changeEvent(self, event) -> None:  # type: ignore[override]
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowStateChange:
+            self._sync_activity()
 
     def show_on_selected_screen(self) -> None:
         from PySide6.QtGui import QGuiApplication
@@ -193,7 +235,7 @@ class StageOutputWindow(QWidget):
         self.raise_()
 
     def _video_frame_changed(self, frame: Any) -> None:
-        if frame is not None and frame.isValid():
+        if self.config.background_kind == "video" and frame is not None and frame.isValid():
             self._video_frame = frame.toImage()
             self.update()
 
@@ -254,7 +296,9 @@ class StageOutputWindow(QWidget):
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         self._refresh_timer.stop()
-        self._video_player.stop()
+        self._release_video()
+        self._background_image = QImage()
+        self._video_frame = QImage()
         self.closed.emit()
         super().closeEvent(event)
 

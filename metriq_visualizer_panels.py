@@ -77,6 +77,15 @@ class AnalysisCanvas(FigureCanvasQTAgg):
         self.cursor: Any = None
         self.axis: Any = None
         self._last_time = -1.0
+        self._pending_data: tuple | None = None
+        self._pending_cursor_time = 0.0
+        self._cursor_background = None
+        self._cursor_background_key = None
+        self._cursor_artists: list[Any] = []
+        self._cursor_dirty = False
+        self.cursor_cache_limit_bytes = 8 * 1024 * 1024
+        self.mpl_connect("draw_event", self._capture_cursor_background)
+        self.mpl_connect("resize_event", self._invalidate_cursor_background)
         self._build_empty("NO ANALYSIS")
 
     def _style_axis(self, axis: Any) -> None:
@@ -90,6 +99,8 @@ class AnalysisCanvas(FigureCanvasQTAgg):
         axis.grid(False)
 
     def _build_empty(self, message: str) -> None:
+        self._invalidate_cursor_background()
+        self._cursor_artists = []
         self.figure.clear()
         axis = self.figure.add_subplot(111)
         self._style_axis(axis)
@@ -102,6 +113,9 @@ class AnalysisCanvas(FigureCanvasQTAgg):
         self.draw_idle()
 
     def set_data(self, analysis: AnalysisResult | None, geometry: GeometryResult | None = None) -> None:
+        self._pending_data = None
+        self._invalidate_cursor_background()
+        self._cursor_artists = []
         self.analysis = analysis
         self.geometry = geometry
         if analysis is None:
@@ -171,18 +185,118 @@ class AnalysisCanvas(FigureCanvasQTAgg):
         self.cursor = axis.axvline(0.0, color=CURSOR, linewidth=1.05, alpha=0.94)
         self.figure.subplots_adjust(left=0.055, right=0.995, bottom=0.23, top=0.94)
         self._last_time = 0.0
+        self._cursor_dirty = True
+        if self.supports_blit:
+            # Preserve normal artist stacking: spines, titles and the trace
+            # legend are foreground too, not baked twice beneath the cursor.
+            artists = sorted(axis.get_children(), key=lambda artist: artist.get_zorder())
+            self._cursor_artists = artists[artists.index(self.cursor):]
+            for artist in self._cursor_artists:
+                artist.set_animated(True)
         self.draw_idle()
 
+    def defer_data(self, analysis: AnalysisResult | None, geometry: GeometryResult | None = None) -> None:
+        """Retain source references, not unused hidden plot rasters/artists."""
+        self.analysis, self.geometry = analysis, geometry
+        self._cursor_artists = []
+        self.cursor = self.axis = None
+        self._invalidate_cursor_background()
+        self.figure.clear()
+        self._pending_data = (analysis, geometry)
+        self._pending_cursor_time = 0.0
+        # Any old queued idle draw now has nothing useful to render. Showing,
+        # grabbing or explicitly drawing this panel will materialize it below.
+        self._draw_pending = False
+
+    def _materialize_data(self) -> None:
+        if self._pending_data is not None:
+            data, seconds = self._pending_data, self._pending_cursor_time
+            self._pending_data = None
+            self.set_data(*data)
+            self.set_time(seconds, draw=False)
+
+    def draw(self) -> None:
+        self._materialize_data()
+        super().draw()
+
+    def paintEvent(self, event) -> None:  # type: ignore[override]
+        self._materialize_data()
+        super().paintEvent(event)
+
+    def _invalidate_cursor_background(self, _event: Any = None) -> None:
+        self._cursor_background = None
+        self._cursor_background_key = None
+        self._cursor_dirty = True
+
+    def _cursor_raster_key(self) -> tuple:
+        return (*self.figure.bbox.bounds, self.figure.dpi, self.device_pixel_ratio)
+
+    def _capture_cursor_background(self, _event: Any) -> None:
+        if self.is_saving() or not self._cursor_artists:
+            self._invalidate_cursor_background()
+            return
+        self._cursor_background = None
+        if self.figure.bbox.width * self.figure.bbox.height * 4 <= self.cursor_cache_limit_bytes:
+            self._cursor_background = self.copy_from_bbox(self.figure.bbox)
+            self._cursor_background_key = self._cursor_raster_key()
+        # The artists are excluded from the normal draw. Draw them once in
+        # their original order, including when caching is over the memory cap.
+        for artist in self._cursor_artists:
+            self.figure.draw_artist(artist)
+        self._cursor_dirty = False
+        self.figure.stale = False
+
+    def _paint_cursor(self) -> None:
+        if not self._cursor_dirty:
+            return
+        if (self._cursor_background is None or self.figure.stale
+                or getattr(self, "_draw_pending", False)
+                or self._cursor_background_key != self._cursor_raster_key()):
+            self.draw_idle()
+            return
+        self.restore_region(self._cursor_background)
+        for artist in self._cursor_artists:
+            self.figure.draw_artist(artist)
+        self._cursor_dirty = False
+        self.figure.stale = False
+        self.blit(self.figure.bbox)
+
+    def ensure_current(self) -> None:
+        """Flush deferred plot/cursor work only when a consumer needs pixels."""
+        self._materialize_data()
+        if getattr(self, "_draw_pending", False):
+            self._draw_idle()
+        if self.figure.stale or (self._cursor_dirty and self._cursor_background is None):
+            self.draw()
+        elif self._cursor_dirty:
+            self._paint_cursor()
+
+    def snapshot(self):
+        """Materialize a deferred cursor for stage output, including hidden tabs."""
+        self.ensure_current()
+        return self.grab()
+
     def set_time(self, seconds: float, *, draw: bool = True) -> None:
+        if self._pending_data is not None:
+            self._pending_cursor_time = max(0.0, float(seconds))
+            if not draw:
+                return
+            self._materialize_data()
         if self.cursor is None:
             return
         value = max(0.0, float(seconds))
-        if abs(value - self._last_time) < 1e-4:
-            return
-        self._last_time = value
-        self.cursor.set_xdata([value, value])
+        if abs(value - self._last_time) >= 1e-4:
+            self._last_time = value
+            self.cursor.set_xdata([value, value])
+            self._cursor_dirty = True
+        # draw=False may have advanced the state already. A later draw=True at
+        # that same time must still paint the deferred cursor.
         if draw:
-            self.draw_idle()
+            self._paint_cursor()
+
+    def hideEvent(self, event) -> None:  # type: ignore[override]
+        self._invalidate_cursor_background()
+        super().hideEvent(event)
 
 
 class SourcePanel(QWidget):
@@ -217,7 +331,10 @@ class SourcePanel(QWidget):
 
     def set_data(self, analysis: AnalysisResult | None, geometry: GeometryResult | None = None) -> None:
         self.analysis = analysis
-        self.waveform.set_data(analysis, geometry)
+        if analysis is not None and analysis.has_video and self.video_widget is not None:
+            self.waveform.defer_data(analysis, geometry)
+        else:
+            self.waveform.set_data(analysis, geometry)
         if analysis is None:
             self.stack.setCurrentWidget(self.message)
         elif bool(analysis.has_video) and self.video_widget is not None:
@@ -225,8 +342,13 @@ class SourcePanel(QWidget):
         else:
             self.stack.setCurrentWidget(self.waveform)
 
+    def snapshot(self):
+        if self.stack.currentWidget() is self.waveform:
+            self.waveform.ensure_current()
+        return self.grab()
+
     def set_time(self, seconds: float, *, draw: bool = True) -> None:
-        self.waveform.set_time(seconds, draw=draw)
+        self.waveform.set_time(seconds, draw=draw and self.stack.currentWidget() is self.waveform)
 
 
 class AnalysisDockWidget(QWidget):
@@ -277,18 +399,26 @@ class AnalysisDockWidget(QWidget):
 
     def set_data(self, analysis: AnalysisResult | None, geometry: GeometryResult | None = None) -> None:
         self.source_panel.set_data(analysis, geometry)
-        self.spectrogram.set_data(analysis, geometry)
-        self.chromagram.set_data(analysis, geometry)
-        self.mfcc.set_data(analysis, geometry)
-        self.traces.set_data(analysis, geometry)
+        current = self.tabs.currentWidget()
+        for panel in (self.spectrogram, self.chromagram, self.mfcc, self.traces):
+            if panel is current and not self._collapsed:
+                panel.set_data(analysis, geometry)
+            else:
+                panel.defer_data(analysis, geometry)
 
     def update_geometry(self, analysis: AnalysisResult | None, geometry: GeometryResult | None) -> None:
-        self.traces.set_data(analysis, geometry)
-        self.source_panel.waveform.set_data(analysis, geometry)
+        if self.tabs.currentWidget() is self.traces and not self._collapsed:
+            self.traces.set_data(analysis, geometry)
+        else:
+            self.traces.defer_data(analysis, geometry)
+        # A changed mapping does not change the source waveform.
+        if self.source_panel.waveform.analysis is not analysis:
+            self.source_panel.waveform.set_data(analysis, geometry)
 
     def set_time(self, seconds: float, *, draw: bool = True) -> None:
         self._current_time = max(0.0, float(seconds))
         current = self.tabs.currentWidget()
+        draw = draw and not self._collapsed
         if current is self.source_panel:
             self.source_panel.set_time(self._current_time, draw=draw)
         elif isinstance(current, AnalysisCanvas):
@@ -304,8 +434,10 @@ class AnalysisDockWidget(QWidget):
         current = self.tabs.currentWidget()
         if current is self.source_panel:
             self.source_panel.set_time(self._current_time)
-            self.source_panel.waveform.draw_idle()
+            if self.source_panel.stack.currentWidget() is self.source_panel.waveform:
+                self.source_panel.waveform.draw_idle()
         elif isinstance(current, AnalysisCanvas):
+            current._materialize_data()
             current.set_time(self._current_time, draw=False)
             current.draw_idle()
 
