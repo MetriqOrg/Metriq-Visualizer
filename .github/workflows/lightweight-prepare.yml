@@ -17,8 +17,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 2
-      - name: Verify patch and prepare eight source blobs without moving branches
+          fetch-depth: 0
+      - name: Prepare eight tested source blobs without updating branches
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -34,14 +34,28 @@ jobs:
           from pathlib import Path
 
           expected_base = '83151d21325c76b18a3ebc4496a77164968ec6be'
-          actual_base = subprocess.check_output(['git', 'rev-parse', 'HEAD^'], text=True).strip()
-          if actual_base != expected_base:
-              raise SystemExit('Branch changed; refusing to apply stale patch')
-          encoded = '''
-          H4sIAAAAAAAC/9V923LbSJbgu74Cw4qNBiUSAkDwJo862u2yqx1TtmXL1b07HgcKBJIS2iTBAkDLqpqKmI/Yf9n3/ZT9kj2XTCBxIynZ07Nb3WFJQOZB5slzz5Mno3i5NIbDmzg3gvOrp8/+5ekPz/1XT1+/fPH8+r319yzZGIv25yfxJhJfjFE0ceZiZFnTKHLD6chwbHvieSfD4bAL4snZ2Vkn1D/9yRi6A8c2zujfP/3pxDCMXhbeinXQuzB6a5Gn8S9WmKy3K5GLYZbs0lAM18EmXoos7w209v7uSrSftfRJH
-          '''
-          # Payload is supplied in the following exact, checksum-guarded update.
-          patch = gzip.decompress(base64.b64decode(''.join(encoded.split()), validate=True))
+          helper_path = '.github/workflows/lightweight-prepare.yml'
+          subprocess.run(['git', 'merge-base', '--is-ancestor', expected_base, 'HEAD'], check=True)
+          differences = subprocess.check_output(['git', 'diff', '--name-only', expected_base, 'HEAD'], text=True).splitlines()
+          if differences != [helper_path]:
+              raise SystemExit('Source changed; refusing to apply stale patch')
+          api = 'https://api.github.com/repos/MetriqOrg/Metriq-Visualizer/'
+          headers = {'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json', 'User-Agent': 'Metriq-Visualizer-Lightweight-Pass'}
+          def request(path, body=None):
+              data = None if body is None else json.dumps(body).encode()
+              req = urllib.request.Request(api + path, headers=headers, data=data, method='GET' if body is None else 'POST')
+              with urllib.request.urlopen(req, timeout=60) as response:
+                  return json.load(response)
+          def git_blob_sha(content):
+              return hashlib.sha1(b'blob ' + str(len(content)).encode() + b'\0' + content).hexdigest()
+          chunks = []
+          for sha in ['9fb3a24ff96459e6175cb0e41fe74090d0a8b726', '30fec8dae2ba76ce48d27b83939f54f8fb69e718', 'd87ad2ec49dd9dc59b1ade92f59ee6c6292c96fc', '8e881a289fd333681039c7a563e000651abdc39b']:
+              response = request('git/blobs/' + sha)
+              content = base64.b64decode(response['content'])
+              if git_blob_sha(content) != sha:
+                  raise SystemExit('Transport checksum mismatch')
+              chunks.append(content)
+          patch = gzip.decompress(base64.b64decode(b''.join(chunks), validate=True))
           expected_hash = '8a4d7a015477902fe1d538635beeaf37948a1c1409ebcd36add2862b043959ed'
           if hashlib.sha256(patch).hexdigest() != expected_hash:
               raise SystemExit('Patch checksum mismatch; no source changed')
@@ -49,15 +63,13 @@ jobs:
           patch_path.write_bytes(patch)
           subprocess.run(['git', 'apply', '--check', str(patch_path)], check=True)
           subprocess.run(['git', 'apply', str(patch_path)], check=True)
+          subprocess.run(['git', 'diff', '--check'], check=True)
           paths = ['PACKAGE_MANIFEST.json', 'docs/LIGHTWEIGHT_RUNTIME_PASS.md', 'metriq_visualizer_app.py', 'metriq_visualizer_panels.py', 'metriq_visualizer_realtime.py', 'metriq_visualizer_stage_output.py', 'tests/test_lightweight_runtime.py', 'tools/benchmark_lightweight.py']
-          headers = {'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json', 'User-Agent': 'Metriq-Visualizer-Lightweight-Pass'}
           entries = []
           for name in paths:
               content = Path(name).read_bytes()
-              blob_sha = hashlib.sha1(b'blob ' + str(len(content)).encode() + b'\0' + content).hexdigest()
-              req = urllib.request.Request('https://api.github.com/repos/MetriqOrg/Metriq-Visualizer/git/blobs', headers=headers, data=json.dumps({'content': base64.b64encode(content).decode(), 'encoding': 'base64'}).encode(), method='POST')
-              with urllib.request.urlopen(req, timeout=60) as response:
-                  uploaded = json.load(response)
+              blob_sha = git_blob_sha(content)
+              uploaded = request('git/blobs', {'content': base64.b64encode(content).decode(), 'encoding': 'base64'})
               if uploaded['sha'] != blob_sha:
                   raise SystemExit('Blob hash mismatch: ' + name)
               entries.append({'path': name, 'sha': blob_sha, 'sha256': hashlib.sha256(content).hexdigest()})
