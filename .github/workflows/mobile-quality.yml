@@ -1,0 +1,136 @@
+name: Mobile GPU foundation
+
+on:
+  push:
+    branches:
+      - codex/visualizer-mobile-gpu-foundation
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/mobile-quality.yml'
+      - 'PACKAGE_MANIFEST.json'
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/mobile-quality.yml'
+      - 'PACKAGE_MANIFEST.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-build:
+    name: Host build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          modules: 'qtmultimedia qtshadertools'
+          cache: true
+      - name: Install Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v6
+      - name: Configure
+        run: qt-cmake -S mobile -B build-mobile -GNinja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+      - name: Build
+        run: cmake --build build-mobile --parallel
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QSG_RHI_BACKEND: software
+        run: ctest --test-dir build-mobile --output-on-failure
+      - name: QML smoke
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QSG_RHI_BACKEND: software
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            ./build-mobile/metriq-visualizer-mobile.exe --smoke-test
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            ./build-mobile/metriq-visualizer-mobile.app/Contents/MacOS/metriq-visualizer-mobile --smoke-test
+          else
+            ./build-mobile/metriq-visualizer-mobile --smoke-test
+          fi
+
+  android-arm64:
+    name: Android arm64 APK
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install host Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          target: desktop
+          dir: '${{ runner.temp }}/qt'
+          modules: 'qtmultimedia qtshadertools'
+          cache: true
+      - name: Install Android Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          target: android
+          arch: android_arm64_v8a
+          dir: '${{ runner.temp }}/qt'
+          modules: 'qtmultimedia qtshadertools'
+          cache: true
+      - name: Install Ninja and Android NDK
+        shell: bash
+        run: |
+          python -m pip install ninja
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0' 'ndk;26.1.10909125'
+      - name: Configure Android
+        shell: bash
+        run: |
+          "$QT_ROOT_DIR/bin/qt-cmake" -S mobile -B build-android -GNinja \
+            -DANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" \
+            -DANDROID_NDK_ROOT="$ANDROID_SDK_ROOT/ndk/26.1.10909125" \
+            -DANDROID_PLATFORM=android-28 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=OFF
+      - name: Build unsigned APK
+        run: cmake --build build-android --target apk --parallel
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Metriq-Visualizer-Mobile-Android-arm64-unsigned
+          path: build-android/android-build/**/*.apk
+          if-no-files-found: error
+
+  ios-compile:
+    name: iOS arm64 compile
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install host Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          target: desktop
+          dir: '${{ runner.temp }}/qt-ios'
+          modules: 'qtmultimedia qtshadertools'
+          cache: true
+      - name: Install iOS Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          target: ios
+          dir: '${{ runner.temp }}/qt-ios'
+          modules: 'qtmultimedia qtshadertools'
+          cache: true
+      - name: Configure unsigned iOS project
+        shell: bash
+        run: |
+          "$QT_ROOT_DIR/bin/qt-cmake" -S mobile -B build-ios -GXcode \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=OFF \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO
+      - name: Compile iOS application
+        run: cmake --build build-ios --config Release -- -sdk iphoneos CODE_SIGNING_ALLOWED=NO
