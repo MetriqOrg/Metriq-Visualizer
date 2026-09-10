@@ -1,0 +1,59 @@
+name: Apply mobile compiler portability fix
+
+on:
+  push:
+    branches:
+      - codex/visualizer-mobile-gpu-foundation
+    paths:
+      - '.github/workflows/mobile-source-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.repository == 'MetriqOrg/Metriq-Visualizer' && github.ref == 'refs/heads/codex/visualizer-mobile-gpu-foundation'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/visualizer-mobile-gpu-foundation
+          fetch-depth: 0
+      - name: Apply exact bounded-index fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              Path('mobile/src/scenecontroller.cpp'): [
+                  ('columnCount = std::max(columnCount, row.size());',
+                   'columnCount = std::max(columnCount, static_cast<int>(row.size()));'),
+                  ('const int divisor = std::max(1, m_points.size() - 1);',
+                   'const int divisor = std::max(1, static_cast<int>(m_points.size()) - 1);'),
+                  ('const int source = std::clamp(qRound(index * step), 0, m_points.size() - 1);',
+                   'const int source = std::clamp(qRound(index * step), 0, static_cast<int>(m_points.size()) - 1);'),
+              ],
+              Path('mobile/src/visualizergeometry.cpp'): [
+                  ('const int dataLines = std::max(0, points.size() - 1);',
+                   'const int dataLines = std::max(0, static_cast<int>(points.size()) - 1);'),
+              ],
+          }
+          for path, pairs in replacements.items():
+              text = path.read_text()
+              for old, new in pairs:
+                  if text.count(old) != 1:
+                      raise SystemExit(f'{path}: expected one exact occurrence of {old!r}')
+                  text = text.replace(old, new)
+              path.write_text(text)
+          PY
+          git diff --check
+      - name: Commit source fix without changing main
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add mobile/src/scenecontroller.cpp mobile/src/visualizergeometry.cpp
+          git commit -m 'Use compiler-portable Qt container index types'
+          git push origin HEAD:codex/visualizer-mobile-gpu-foundation
