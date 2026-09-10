@@ -1,0 +1,1 @@
+Validate the native mobile foundation at this branch revision on Linux x86_64, Windows x86_64, and Apple Silicon macOS using Qt 6.8.3. Build C++, QML cache products, and portable QSB shaders; run native tests and smoke-start the CPU fallback. This marker is intentionally retained as the reproducible validation trigger.
