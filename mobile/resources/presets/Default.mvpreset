@@ -1,0 +1,77 @@
+{
+  "name": "Data Disco",
+  "schema": "metriq.visualizer-preset",
+  "schema_version": 4,
+  "state": {
+    "extraction": {
+      "sample_rate": 0,
+      "n_fft": 2048,
+      "hop_length": 512,
+      "min_frequency": 0.0,
+      "max_frequency": 0.0,
+      "max_frames": 4096,
+      "n_mels": 96,
+      "mfcc_count": 20
+    },
+    "geometry": {
+      "colormap": "turbo",
+      "low_volume_cutoff_db": 0.0,
+      "max_points": 3500,
+      "normalize_mode": "zscore"
+    },
+    "mapping": {
+      "color": "spectral_centroid_hz",
+      "preset": "Pitch/Timbre/Motion",
+      "size": "rms",
+      "x": "0.7*chroma_mean + 0.3*f0_hz",
+      "y": "0.6*mfcc_1 + 0.4*mfcc_2",
+      "z": "0.6*spectral_flux + 0.4*onset_strength"
+    },
+    "performance": {
+      "adaptive": true,
+      "live_point_budget": 1200,
+      "live_redraw_fps": 60,
+      "mode": "Balanced",
+      "refine_idle": false
+    },
+    "visual": {
+      "autorotate": true,
+      "azim": 35.0,
+      "base_alpha": 1.0,
+      "comet_duration": 0.28,
+      "connect_lines": true,
+      "curve_detail": 10,
+      "elev": 24.0,
+      "fade_curve": 0.4,
+      "flash_duration": 0.02,
+      "flash_size_scale": 0.1,
+      "ghost_path": false,
+      "halo_size_scale": 0.15,
+      "head_size_scale": 0.24,
+      "history_mode": "Trail fade",
+      "line_width": 1.55,
+      "max_point_labels": 8,
+      "path_curve_mode": "Smooth spline",
+      "point_label_content": "Time + Hz",
+      "point_label_mode": "Off",
+      "point_lifespan": 1.0,
+      "point_size_scale": 0.4,
+      "render_mode": "Points + line",
+      "rotation_speed": 16.0,
+      "show_axes": true,
+      "show_axis_labels": false,
+      "show_colorbar": false,
+      "show_head_marker": true,
+      "tube_follow_size": true,
+      "tube_radius_scale": 1.0,
+      "tube_sides": 12,
+      "tube_taper": 0.2,
+      "zoom": 1.0
+    },
+    "mobile": {
+      "gpu_state_version": 1,
+      "preferred_frame_rate": 60,
+      "thermal_adaptation": true
+    }
+  }
+}
