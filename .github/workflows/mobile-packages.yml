@@ -1,0 +1,225 @@
+name: Mobile foundation packages
+
+on:
+  push:
+    branches:
+      - codex/visualizer-mobile-gpu-foundation-v2
+    paths:
+      - 'mobile/REQUEST_MOBILE_PACKAGES.txt'
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  android-debug:
+    name: Android arm64 debug APK
+    runs-on: ubuntu-22.04
+    timeout-minutes: 55
+    env:
+      QT_VERSION: '6.8.3'
+      QT_HOST_DIR: ${{ runner.temp }}/qt-host
+      QT_ANDROID_DIR: ${{ runner.temp }}/qt-android
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/visualizer-mobile-gpu-foundation-v2
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK packages and aqtinstall
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip aqtinstall
+          yes | "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager" \
+            'platforms;android-35' 'build-tools;35.0.0' 'platform-tools' 'ndk;27.2.12479018'
+
+      - name: Install matching host and Android Qt
+        shell: bash
+        run: |
+          python -m aqt install-qt linux desktop "${QT_VERSION}" linux_gcc_64 \
+            -O "${QT_HOST_DIR}" -m qtmultimedia qtshadertools
+          python -m aqt install-qt linux android "${QT_VERSION}" android_arm64_v8a \
+            -O "${QT_ANDROID_DIR}" -m qtmultimedia qtshadertools
+          echo "QT_HOST_PATH=${QT_HOST_DIR}/${QT_VERSION}/gcc_64" >> "${GITHUB_ENV}"
+          echo "QT_ANDROID_ROOT=${QT_ANDROID_DIR}/${QT_VERSION}/android_arm64_v8a" >> "${GITHUB_ENV}"
+          echo "ANDROID_NDK_ROOT=${ANDROID_SDK_ROOT}/ndk/27.2.12479018" >> "${GITHUB_ENV}"
+
+      - name: Configure Android target
+        shell: bash
+        run: |
+          cmake -S mobile -B mobile/build-android-arm64 -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DBUILD_TESTING=OFF \
+            -DCMAKE_TOOLCHAIN_FILE="${QT_ANDROID_ROOT}/lib/cmake/Qt6/qt.toolchain.cmake" \
+            -DQT_HOST_PATH="${QT_HOST_PATH}" \
+            -DANDROID_SDK_ROOT="${ANDROID_SDK_ROOT}" \
+            -DANDROID_NDK="${ANDROID_NDK_ROOT}" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-28
+
+      - name: Build APK
+        shell: bash
+        run: |
+          cmake --build mobile/build-android-arm64 --target apk --parallel 2
+          apk="$(find mobile/build-android-arm64 -type f -name '*.apk' | head -n 1)"
+          test -n "${apk}"
+          mkdir -p mobile-package-output/android
+          cp "${apk}" mobile-package-output/android/Metriq-Visualizer-Mobile-0.1.0-arm64-debug.apk
+          sha256sum mobile-package-output/android/*.apk > mobile-package-output/android/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Metriq-Visualizer-Mobile-Android-arm64-debug
+          path: mobile-package-output/android/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Android logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Metriq-Visualizer-Mobile-Android-failure
+          path: |
+            mobile/build-android-arm64/CMakeCache.txt
+            mobile/build-android-arm64/CMakeFiles/CMakeOutput.log
+            mobile/build-android-arm64/CMakeFiles/CMakeError.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  ios-simulator:
+    name: iOS Simulator arm64 app
+    runs-on: macos-14
+    timeout-minutes: 55
+    env:
+      QT_VERSION: '6.8.3'
+      QT_HOST_DIR: ${{ runner.temp }}/qt-host
+      QT_IOS_DIR: ${{ runner.temp }}/qt-ios
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/visualizer-mobile-gpu-foundation-v2
+          fetch-depth: 0
+
+      - name: Install aqtinstall
+        run: python3 -m pip install --upgrade pip aqtinstall
+
+      - name: Install matching host and iOS Qt
+        shell: bash
+        run: |
+          python3 -m aqt install-qt mac desktop "${QT_VERSION}" clang_64 \
+            -O "${QT_HOST_DIR}" -m qtmultimedia qtshadertools
+          python3 -m aqt install-qt mac ios "${QT_VERSION}" ios \
+            -O "${QT_IOS_DIR}" -m qtmultimedia qtshadertools
+          echo "QT_HOST_PATH=${QT_HOST_DIR}/${QT_VERSION}/macos" >> "${GITHUB_ENV}"
+          echo "QT_IOS_ROOT=${QT_IOS_DIR}/${QT_VERSION}/ios" >> "${GITHUB_ENV}"
+
+      - name: Configure iOS Simulator target
+        shell: bash
+        run: |
+          cmake -S mobile -B mobile/build-ios-simulator -G Xcode \
+            -DBUILD_TESTING=OFF \
+            -DCMAKE_TOOLCHAIN_FILE="${QT_IOS_ROOT}/lib/cmake/Qt6/qt.toolchain.cmake" \
+            -DQT_HOST_PATH="${QT_HOST_PATH}" \
+            -DCMAKE_OSX_SYSROOT=iphonesimulator \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO
+
+      - name: Build unsigned simulator app
+        shell: bash
+        run: |
+          cmake --build mobile/build-ios-simulator --config RelWithDebInfo --parallel 2 -- \
+            -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+          app="$(find mobile/build-ios-simulator -type d -name 'MetriqVisualizerMobile.app' | head -n 1)"
+          test -n "${app}"
+          mkdir -p mobile-package-output/ios
+          ditto -c -k --sequesterRsrc --keepParent "${app}" \
+            mobile-package-output/ios/Metriq-Visualizer-Mobile-0.1.0-iOS-Simulator-arm64.zip
+          shasum -a 256 mobile-package-output/ios/*.zip > mobile-package-output/ios/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Metriq-Visualizer-Mobile-iOS-Simulator-arm64
+          path: mobile-package-output/ios/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload iOS logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Metriq-Visualizer-Mobile-iOS-failure
+          path: |
+            mobile/build-ios-simulator/CMakeCache.txt
+            mobile/build-ios-simulator/CMakeFiles/CMakeOutput.log
+            mobile/build-ios-simulator/CMakeFiles/CMakeError.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  record:
+    name: Record mobile package result
+    needs: [android-debug, ios-simulator]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/visualizer-mobile-gpu-foundation-v2
+          fetch-depth: 0
+
+      - name: Write package validation record
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+          import os
+
+          payload = {
+              'schema': 'metriq.mobile-package-validation',
+              'schema_version': 1,
+              'generated_at': datetime.now(timezone.utc).isoformat(),
+              'foundation_version': '0.1.0',
+              'workflow_run_id': os.environ['GITHUB_RUN_ID'],
+              'artifacts': {
+                  'android': 'Metriq-Visualizer-Mobile-Android-arm64-debug',
+                  'ios_simulator': 'Metriq-Visualizer-Mobile-iOS-Simulator-arm64'
+              },
+              'checks': {
+                  'android_arm64_debug_apk': 'passed',
+                  'ios_simulator_arm64_app': 'passed'
+              },
+              'production_boundaries': [
+                  'Android artifact is a debug APK, not a signed Play Store AAB',
+                  'iOS artifact targets Simulator and is not a signed device IPA',
+                  'No physical microphone, Metal/Vulkan GPU, thermal, or battery validation'
+              ]
+          }
+          Path('mobile/VALIDATION_PACKAGES.json').write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          PY
+
+      - name: Commit package evidence
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add mobile/VALIDATION_PACKAGES.json
+          git diff --cached --check
+          git commit -m 'Record Android debug and iOS Simulator package builds'
+          git push origin HEAD:codex/visualizer-mobile-gpu-foundation-v2
+
+      - name: Comment on stacked PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh pr comment 6 --repo MetriqOrg/Metriq-Visualizer --body \
+            "Mobile package gate passed for workflow run ${GITHUB_RUN_ID}: Android arm64 debug APK and unsigned iOS Simulator arm64 app were built and retained as 14-day Actions artifacts. These are development artifacts, not store-signed releases or physical-device certification."
