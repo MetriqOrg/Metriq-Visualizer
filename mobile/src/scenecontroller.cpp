@@ -124,7 +124,7 @@ QVector<int> chooseNumericColumns(const QVector<QVector<QString>> &sampleRows, i
         return {};
     int columnCount = 0;
     for (const auto &row : sampleRows)
-        columnCount = std::max(columnCount, row.size());
+        columnCount = std::max(columnCount, static_cast<int>(row.size()));
 
     struct Candidate { int column; int count; };
     QVector<Candidate> candidates;
@@ -836,7 +836,7 @@ void SceneController::appendLiveMetrics(const AudioMetrics &metrics)
     ++m_liveSequence;
     if (m_points.size() > kMaximumLivePoints)
         m_points.remove(0, m_points.size() - kMaximumLivePoints);
-    const int divisor = std::max(1, m_points.size() - 1);
+    const int divisor = std::max(1, static_cast<int>(m_points.size()) - 1);
     for (int index = 0; index < m_points.size(); ++index)
         m_points[index].time = static_cast<float>(index) / divisor;
     m_progress = 1.0;
@@ -857,7 +857,7 @@ void SceneController::rebuildRenderPoints()
         const double step = static_cast<double>(m_points.size() - 1) / (m_pointBudget - 1);
         int previous = -1;
         for (int index = 0; index < m_pointBudget; ++index) {
-            const int source = std::clamp(qRound(index * step), 0, m_points.size() - 1);
+            const int source = std::clamp(qRound(index * step), 0, static_cast<int>(m_points.size()) - 1);
             if (source != previous) {
                 m_renderPoints.append(m_points.at(source));
                 previous = source;

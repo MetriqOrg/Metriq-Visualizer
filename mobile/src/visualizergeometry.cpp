@@ -56,7 +56,7 @@ QVector<VisualizerVertex> buildVisualizerVertices(const QVector<ScenePoint> &poi
                                                   int gridDivisions)
 {
     gridDivisions = std::clamp(gridDivisions, 2, 12);
-    const int dataLines = std::max(0, points.size() - 1);
+    const int dataLines = std::max(0, static_cast<int>(points.size()) - 1);
     const int gridLines = (gridDivisions + 1) * 6;
     QVector<VisualizerVertex> vertices;
     vertices.reserve((dataLines + points.size() + gridLines + 3) * 6);
