@@ -1,0 +1,43 @@
+{
+  "schema": "metriq.visualizer-mobile-source",
+  "schema_version": 1,
+  "foundation_version": "0.1.0",
+  "desktop_base": "bac4446aa6ffd33cedcbaedf17211f30ade63fec",
+  "qt_minimum": "6.8.0",
+  "runtime": {
+    "language": "C++20",
+    "ui": "Qt Quick/QML",
+    "renderer": "Qt Quick scene graph with portable QSB shaders",
+    "gpu_apis": ["Metal", "Vulkan", "OpenGL ES", "OpenGL", "Direct3D"],
+    "fallback": "QQuickPaintedItem CPU renderer"
+  },
+  "state_compatibility": {
+    "preset_schema": "metriq.visualizer-preset",
+    "preset_max_version": 4,
+    "project_schema": "metriq.visualizer-project",
+    "project_max_version": 2,
+    "unknown_sections_preserved": true
+  },
+  "implemented": [
+    "retained GPU position/color/size/time buffers",
+    "GPU camera projection and temporal fading",
+    "software renderer fallback",
+    "phone and tablet touch shell",
+    "mapped CSV/TSV/TXT import",
+    "native microphone permission and bounded worker-thread FFT features",
+    "preset and project load/save",
+    "Android package metadata",
+    "iOS bundle and document metadata",
+    "native regression tests and host startup smoke"
+  ],
+  "not_claimed_complete": [
+    "full desktop file-analysis parity",
+    "all scientific analysis panels",
+    "source video and camera analysis",
+    "GPU ribbon/tube and every desktop accent",
+    "zero-copy hardware video export",
+    "Android document-provider write-back",
+    "signed APK, AAB, IPA, or store submission",
+    "physical device GPU, audio, thermal, or battery certification"
+  ]
+}
