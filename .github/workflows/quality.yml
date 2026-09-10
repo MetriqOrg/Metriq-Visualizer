@@ -4,9 +4,21 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
-    runs-on: ubuntu-22.04
+    name: Quality (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022, macos-14, macos-15-intel]
+    defaults:
+      run:
+        shell: bash
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
@@ -15,10 +27,18 @@ jobs:
         with:
           python-version: '3.11'
           cache: pip
-      - name: Install system libraries
+      - name: Install Linux system libraries
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 libpulse0 libportaudio2
+      - name: Install macOS system libraries
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg portaudio
+      - name: Install Windows FFmpeg
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install ffmpeg -y --no-progress
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip

@@ -2,10 +2,10 @@
   "schema": "metriq.complete-source-manifest",
   "schema_version": 1,
   "version": "1.12.8",
-  "generated_at": "2026-07-13T19:28:00+00:00",
+  "generated_at": "2026-09-10T14:22:38.522489+00:00",
   "self_included": false,
-  "file_count": 96,
-  "total_bytes": 2820801,
+  "file_count": 102,
+  "total_bytes": 2888184,
   "files": [
     {
       "path": ".gitattributes",
@@ -21,9 +21,9 @@
     },
     {
       "path": ".github/workflows/quality.yml",
-      "bytes": 1558,
+      "bytes": 2120,
       "mode": "0644",
-      "sha256": "4b4a1b6d83e4b17e8e07982ebea9bb83985fb9acc457d649c1ef5414fdd106e9"
+      "sha256": "31be2623b8e61df7a40639fea673c0a7295fcf42c25a503af9943df359d9b016"
     },
     {
       "path": ".gitignore",
@@ -158,6 +158,12 @@
       "sha256": "6f9b401aa3fdd5e1204a0fdf59bc847a4bf391f546ffefcd47576aa89783c9e8"
     },
     {
+      "path": "docs/LIGHTWEIGHT_RUNTIME_PASS.md",
+      "bytes": 7307,
+      "mode": "0644",
+      "sha256": "d3ebb213e7153bc565c587b7a6834070ce023f3945aad216961049e692eb9aa7"
+    },
+    {
       "path": "docs/LIVE_INPUT.md",
       "bytes": 2651,
       "mode": "0644",
@@ -180,6 +186,12 @@
       "bytes": 2693,
       "mode": "0644",
       "sha256": "d7851711be2883b94b306348ee68b09dabbca55ab12e66ad8fc92bac945d5145"
+    },
+    {
+      "path": "docs/RENDERING_OPTIMIZATION.md",
+      "bytes": 9182,
+      "mode": "0644",
+      "sha256": "49e5e8ecbedbd4c97ba3795f4d2bfb96e5078cbf4b944cd2e211db4492c82c4f"
     },
     {
       "path": "docs/ROADMAP.md",
@@ -291,15 +303,15 @@
     },
     {
       "path": "metriq_visualizer_3d.py",
-      "bytes": 64385,
+      "bytes": 64798,
       "mode": "0644",
-      "sha256": "a15872cea134a995a6609b2fae3a1d12ba58b465ba590a78ecadfcfe80455d4e"
+      "sha256": "90a4fbb50fc6fb914a9363e016e3b3443d7714a9041a1191d31f8a9a1853bfa3"
     },
     {
       "path": "metriq_visualizer_app.py",
-      "bytes": 130446,
+      "bytes": 130650,
       "mode": "0644",
-      "sha256": "9a4755e07d9fd98847bc4ea4afdbcfeca056465fed49ce8d278b520428d99085"
+      "sha256": "9fbb0a9398b59431b36a29024455ef31125f69490c212f1d881e29d0fdba5916"
     },
     {
       "path": "metriq_visualizer_atomic.py",
@@ -357,9 +369,9 @@
     },
     {
       "path": "metriq_visualizer_panels.py",
-      "bytes": 14473,
+      "bytes": 20461,
       "mode": "0644",
-      "sha256": "3c9c51f706f4fa450a8713615a9f94ff070864938ab30d82cd079044ff6cfc1c"
+      "sha256": "0cea795f9396e4289290d89ca02121d2920d45c5ad6ea555def66cecacb321b7"
     },
     {
       "path": "metriq_visualizer_performance.py",
@@ -381,9 +393,9 @@
     },
     {
       "path": "metriq_visualizer_realtime.py",
-      "bytes": 29204,
+      "bytes": 34559,
       "mode": "0644",
-      "sha256": "a8be3ce14675e70759791137abea6228895da01c76ae4906aa57a4eeda8c79ec"
+      "sha256": "e05ac0a9826495cdef6a73fdec087b111fe9e64040ea7380a4317ea6ca453b8d"
     },
     {
       "path": "metriq_visualizer_render.py",
@@ -393,9 +405,9 @@
     },
     {
       "path": "metriq_visualizer_stage_output.py",
-      "bytes": 18873,
+      "bytes": 20716,
       "mode": "0644",
-      "sha256": "263fd5b125f53e0b1d5fc1f51b404d2d9c3b8ae6d5ac4949adca95fd7cdffd4a"
+      "sha256": "a894327c3aade5b72dc4a38a212ade7f803d30761139a41c4262b942198a5f7a"
     },
     {
       "path": "metriq_visualizer_theme.py",
@@ -441,9 +453,9 @@
     },
     {
       "path": "pyproject.toml",
-      "bytes": 2179,
+      "bytes": 2246,
       "mode": "0644",
-      "sha256": "f49c5406840569bc11829529e4042ab2f64d1b3b469211f007434c430b0531ce"
+      "sha256": "413df6cd43c9ef7b9a08567bcc5cdb05590cd1667f5d2adce21763bbf3629f1e"
     },
     {
       "path": "requirements.txt",
@@ -512,6 +524,12 @@
       "sha256": "d05e469238689a3eabd3ef8b025bbc4d96dba5684e5cf35cd126d40e221c0a0a"
     },
     {
+      "path": "tests/test_lightweight_runtime.py",
+      "bytes": 13201,
+      "mode": "0644",
+      "sha256": "fa5aae79b6e2163b99cf6d9f9f9a15a003f33f17e46cc83189b0fec1b724f356"
+    },
+    {
       "path": "tests/test_live.py",
       "bytes": 4363,
       "mode": "0644",
@@ -542,6 +560,12 @@
       "sha256": "a77d48f07000611bef211681c0cdd9902374c2e7061243c1119f76addf62d4c5"
     },
     {
+      "path": "tests/test_render_optimization.py",
+      "bytes": 13313,
+      "mode": "0644",
+      "sha256": "02b3c2483c7be83c814c2cd24c2e5107e044d605b123b178389a5dad56f735c2"
+    },
+    {
       "path": "tests/test_stage_output.py",
       "bytes": 2013,
       "mode": "0644",
@@ -570,6 +594,18 @@
       "bytes": 1237,
       "mode": "0644",
       "sha256": "6bbea7f307fdfb937448dbacca90ac0039ad593dfae01755cb525d4bf60b514d"
+    },
+    {
+      "path": "tools/benchmark_lightweight.py",
+      "bytes": 5491,
+      "mode": "0644",
+      "sha256": "20be5229ba7e1067ba7cef88f84bfc747eb94066a7fadf3e7e772a427cf46e0e"
+    },
+    {
+      "path": "tools/benchmark_realtime.py",
+      "bytes": 4457,
+      "mode": "0644",
+      "sha256": "cd970a47a2e2ca6f59720cc312cdced5d8e70e9e14a905469839441356de3abf"
     },
     {
       "path": "tools/merge_into_repo.py",

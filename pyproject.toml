@@ -61,7 +61,9 @@ py-modules = [
   "metriq_visualizer_projects",
   "metriq_visualizer_realtime",
   "metriq_visualizer_render",
+  "metriq_visualizer_stage_output",
   "metriq_visualizer_theme",
+  "metriq_visualizer_updates",
   "metriq_visualizer_visuals",
 ]
 
