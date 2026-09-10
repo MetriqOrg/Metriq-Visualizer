@@ -1,5 +1,6 @@
 name: Mobile GPU foundation
 
+# Native Qt Quick/RHI validation for host, Android, and iOS targets.
 on:
   push:
     branches:
