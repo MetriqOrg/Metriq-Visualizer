@@ -1,0 +1,1 @@
+Build an Android arm64 debug APK and an unsigned Apple Silicon iOS Simulator app from the native mobile GPU foundation. Upload both as development artifacts and record checksums and production boundaries. Do not claim Play Store/App Store signing or physical-device certification.
