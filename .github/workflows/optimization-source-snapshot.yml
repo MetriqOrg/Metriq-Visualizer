@@ -21,3 +21,15 @@ jobs:
           path: visualizer-source.zip
           retention-days: 1
           if-no-files-found: error
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Download pinned test dependencies for offline Linux validation
+        run: python -m pip download --only-binary=:all: --dest qt-wheels PySide6==6.9.3 sounddevice==0.5.3 ruff==0.12.12
+      - uses: actions/upload-artifact@v4
+        with:
+          name: visualizer-optimization-qt-wheels
+          path: qt-wheels/*.whl
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
