@@ -1,0 +1,306 @@
+name: Refine retained mobile GPU source
+
+on:
+  push:
+    branches:
+      - codex/visualizer-mobile-gpu-foundation-v2
+    paths:
+      - '.github/workflows/mobile-source-refine.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  refine:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      QT_QPA_PLATFORM: offscreen
+      QSG_RHI_BACKEND: software
+      QML_DISABLE_DISK_CACHE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/visualizer-mobile-gpu-foundation-v2
+          fetch-depth: 0
+
+      - name: Apply idempotent retained-renderer refinements
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def require_replace(text: str, old: str, new: str, path: str) -> str:
+              if old not in text:
+                  if new in text:
+                      return text
+                  raise SystemExit(f'expected source fragment missing in {path}: {old!r}')
+              return text.replace(old, new)
+
+          path = Path('mobile/src/VisualizerModel.h')
+          text = path.read_text(encoding='utf-8')
+          text = require_replace(
+              text,
+              '[[nodiscard]] Snapshot snapshot() const;',
+              '[[nodiscard]] Snapshot snapshot(bool includeGeometry = true) const;',
+              str(path),
+          )
+          path.write_text(text, encoding='utf-8')
+
+          path = Path('mobile/src/VisualizerModel.cpp')
+          text = path.read_text(encoding='utf-8')
+          if '#include <QHash>\n' not in text:
+              text = text.replace('#include <QFileInfo>\n', '#include <QFileInfo>\n#include <QHash>\n')
+          if '#include <numbers>\n' not in text:
+              text = text.replace('#include <limits>\n', '#include <limits>\n#include <numbers>\n')
+          if '#include <utility>\n' not in text:
+              text = text.replace('#include <numbers>\n', '#include <numbers>\n#include <utility>\n')
+          text = text.replace('static_cast<float>(M_PI)', 'std::numbers::pi_v<float>')
+          text = text.replace('std::remainder<qreal>(', 'std::remainder(')
+          text = text.replace(
+              'geometry.insert(QStringLiteral("max_points"), qMax(1, m_points.size()));',
+              'geometry.insert(QStringLiteral("max_points"), static_cast<double>(std::max<qsizetype>(1, m_points.size())));',
+          )
+          text = require_replace(
+              text,
+              'VisualizerModel::Snapshot VisualizerModel::snapshot() const\n{\n'
+              '    QReadLocker locker(&m_lock);\n'
+              '    Snapshot result;\n'
+              '    result.positions.reserve(m_points.size());\n'
+              '    result.colors.reserve(m_points.size());\n'
+              '    result.sizes.reserve(m_points.size());\n'
+              '    result.times.reserve(m_points.size());\n'
+              '    for (const Point &point : m_points) {\n'
+              '        result.positions.push_back(point.position);\n'
+              '        result.colors.push_back(point.color);\n'
+              '        result.sizes.push_back(point.size);\n'
+              '        result.times.push_back(point.time);\n'
+              '    }',
+              'VisualizerModel::Snapshot VisualizerModel::snapshot(bool includeGeometry) const\n{\n'
+              '    QReadLocker locker(&m_lock);\n'
+              '    Snapshot result;\n'
+              '    if (includeGeometry) {\n'
+              '        result.positions.reserve(m_points.size());\n'
+              '        result.colors.reserve(m_points.size());\n'
+              '        result.sizes.reserve(m_points.size());\n'
+              '        result.times.reserve(m_points.size());\n'
+              '        for (const Point &point : m_points) {\n'
+              '            result.positions.push_back(point.position);\n'
+              '            result.colors.push_back(point.color);\n'
+              '            result.sizes.push_back(point.size);\n'
+              '            result.times.push_back(point.time);\n'
+              '        }\n'
+              '    }',
+              str(path),
+          )
+          text = require_replace(
+              text,
+              '    const float endTime = std::max(0.001F, raw.constLast().time);\n'
+              '    for (int index = 0; index < raw.size(); ++index) {',
+              '    float monotonicTime = 0.0F;\n'
+              '    for (int index = 0; index < raw.size(); ++index) {',
+              str(path),
+          )
+          text = require_replace(
+              text,
+              '        point.size = source.size;\n'
+              '        point.time = source.time;\n'
+              '        points.push_back(point);',
+              '        point.size = source.size;\n'
+              '        point.time = std::max(monotonicTime, source.time);\n'
+              '        monotonicTime = point.time;\n'
+              '        points.push_back(point);',
+              str(path),
+          )
+          text = require_replace(
+              text,
+              '    replacePoints(std::move(points), QFileInfo(path).fileName());\n'
+              '    setCurrentTime(endTime);',
+              '    replacePoints(std::move(points), QFileInfo(path).fileName());\n'
+              '    setCurrentTime(duration());',
+              str(path),
+          )
+          path.write_text(text, encoding='utf-8')
+
+          path = Path('mobile/src/VisualizerItem.cpp')
+          text = path.read_text(encoding='utf-8')
+          text = require_replace(
+              text,
+              '    QVector<Vertex> headVertex;\n'
+              '    if (!snapshot.positions.isEmpty()) {\n'
+              '        auto iterator = std::upper_bound(snapshot.times.cbegin(), snapshot.times.cend(), snapshot.currentTime);\n'
+              '        int index = static_cast<int>(std::distance(snapshot.times.cbegin(), iterator)) - 1;\n'
+              '        index = std::clamp(index, 0, snapshot.positions.size() - 1);\n'
+              '        headVertex.push_back(makeVertex(\n'
+              '            snapshot.positions.at(index),\n'
+              '            snapshot.colors.value(index, QColor(Qt::white)),\n'
+              '            snapshot.sizes.value(index, 20.0F),\n'
+              '            snapshot.times.value(index, snapshot.currentTime)));\n'
+              '    }',
+              '    QVector<Vertex> headVertex;\n'
+              '    if (!scene->positions.isEmpty()) {\n'
+              '        auto iterator = std::upper_bound(scene->times.cbegin(), scene->times.cend(), snapshot.currentTime);\n'
+              '        int index = static_cast<int>(std::distance(scene->times.cbegin(), iterator)) - 1;\n'
+              '        index = std::clamp(index, 0, scene->positions.size() - 1);\n'
+              '        headVertex.push_back(makeVertex(\n'
+              '            scene->positions.at(index),\n'
+              '            scene->colors.value(index, QColor(Qt::white)),\n'
+              '            scene->sizes.value(index, 20.0F),\n'
+              '            scene->times.value(index, snapshot.currentTime)));\n'
+              '    }',
+              str(path),
+          )
+          text = require_replace(
+              text,
+              '    QSGGeometryNode *head = nullptr;\n'
+              '    quint64 revision = std::numeric_limits<quint64>::max();',
+              '    QSGGeometryNode *head = nullptr;\n'
+              '    QVector<QVector3D> positions;\n'
+              '    QVector<QColor> colors;\n'
+              '    QVector<float> sizes;\n'
+              '    QVector<float> times;\n'
+              '    quint64 revision = std::numeric_limits<quint64>::max();',
+              str(path),
+          )
+          text = require_replace(
+              text,
+              '    const VisualizerModel::Snapshot snapshot = m_model->snapshot();\n'
+              '    const bool rebuild = m_geometryDirty.exchange(false, std::memory_order_acq_rel)\n'
+              '        || scene->revision != snapshot.revision;\n'
+              '    if (rebuild) {\n'
+              '        QVector<Vertex> vertices;',
+              '    VisualizerModel::Snapshot snapshot = m_model->snapshot(false);\n'
+              '    const bool rebuild = m_geometryDirty.exchange(false, std::memory_order_acq_rel)\n'
+              '        || scene->revision != snapshot.revision;\n'
+              '    if (rebuild) {\n'
+              '        snapshot = m_model->snapshot(true);\n'
+              '        scene->positions = snapshot.positions;\n'
+              '        scene->colors = snapshot.colors;\n'
+              '        scene->sizes = snapshot.sizes;\n'
+              '        scene->times = snapshot.times;\n'
+              '        QVector<Vertex> vertices;',
+              str(path),
+          )
+          text = require_replace(
+              text,
+              '    setVertices(scene->head, headVertex, QSGGeometry::DrawPoints);\n\n'
+              '    const QString renderMode',
+              '    setVertices(scene->head, headVertex, QSGGeometry::DrawPoints);\n'
+              '    scene->trail->geometry()->setLineWidth(snapshot.lineWidth);\n'
+              '    scene->trail->markDirty(QSGNode::DirtyGeometry);\n\n'
+              '    const QString renderMode',
+              str(path),
+          )
+          text = require_replace(
+              text,
+              '    configureMaterial(scene->grid, snapshot, viewport, snapshot.showAxes ? 1.0F : 0.0F, 1.0F, -1.0F);\n'
+              '    configureMaterial(scene->trail, snapshot, viewport,\n'
+              '                      snapshot.connectLines && !pointsOnly ? 1.0F : 0.0F, 1.0F);\n'
+              '    configureMaterial(scene->points, snapshot, viewport, showPoints ? 1.0F : 0.0F, 1.0F);',
+              '    configureMaterial(scene->grid, snapshot, viewport, snapshot.showAxes ? 1.0F : 0.0F, 0.0F, -1.0F);\n'
+              '    configureMaterial(scene->trail, snapshot, viewport,\n'
+              '                      snapshot.connectLines && !pointsOnly ? 1.0F : 0.0F, 0.0F);\n'
+              '    configureMaterial(scene->points, snapshot, viewport, showPoints ? 1.0F : 0.0F, 1.0F);',
+              str(path),
+          )
+          path.write_text(text, encoding='utf-8')
+
+          path = Path('mobile/shaders/visualizer.vert')
+          text = path.read_text(encoding='utf-8')
+          text = require_replace(
+              text,
+              '    float pointRadius = sqrt(max(inSize, 1.0)) * 0.32\n'
+              '        * max(ubuf.camera.w, 0.01) * max(ubuf.style.w, 0.01);\n'
+              '    gl_PointSize = clamp(pointRadius, 1.0, 28.0);\n'
+              '    vPointPrimitive = ubuf.style.w > 1.1 ? 1.0 : 0.0;',
+              '    float pointRadius = sqrt(max(inSize, 1.0)) * 0.32\n'
+              '        * max(ubuf.camera.w, 0.01) * max(ubuf.style.w, 0.01);\n'
+              '    gl_PointSize = clamp(pointRadius, 1.0, 28.0);\n'
+              '    vPointPrimitive = ubuf.style.w > 0.5 ? 1.0 : 0.0;',
+              str(path),
+          )
+          path.write_text(text, encoding='utf-8')
+
+          path = Path('mobile/src/AudioFeatureEngine.cpp')
+          text = path.read_text(encoding='utf-8')
+          text = require_replace(
+              text,
+              'void AudioFeatureEngine::acceptFrame(const AudioFeatureFrame &frame)\n{\n'
+              '    m_blocksInFlight = std::max(0, m_blocksInFlight - 1);\n'
+              '    m_lastFrame = frame;',
+              'void AudioFeatureEngine::acceptFrame(const AudioFeatureFrame &frame)\n{\n'
+              '    m_blocksInFlight = std::max(0, m_blocksInFlight - 1);\n'
+              '    if (!m_active)\n'
+              '        return;\n'
+              '    m_lastFrame = frame;',
+              str(path),
+          )
+          path.write_text(text, encoding='utf-8')
+
+          path = Path('mobile/resources/presets/Default.mvpreset')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace('"live_redraw_fps": 60', '"live_redraw_fps": 12')
+          text = text.replace('"head_size_scale": 0.24', '"head_size_scale": 0.0')
+          path.write_text(text, encoding='utf-8')
+
+          path = Path('mobile/tests/tst_mobile_core.cpp')
+          text = path.read_text(encoding='utf-8')
+          text = require_replace(
+              text,
+              '    void liveHistoryIsBoundedWithoutChangingBudget();',
+              '    void liveHistoryIsBoundedWithoutChangingBudget();\n'
+              '    void lightweightSnapshotAvoidsGeometryCopies();',
+              str(path),
+          )
+          anchor = 'void MobileCoreTests::stateRoundTripPreservesUnknownSections()\n'
+          addition = '''void MobileCoreTests::lightweightSnapshotAvoidsGeometryCopies()\n{
+    VisualizerModel model;
+    model.generateDemo(4096);
+    const auto lightweight = model.snapshot(false);
+    const auto full = model.snapshot(true);
+    QVERIFY(lightweight.positions.isEmpty());
+    QVERIFY(lightweight.colors.isEmpty());
+    QVERIFY(lightweight.sizes.isEmpty());
+    QVERIFY(lightweight.times.isEmpty());
+    QCOMPARE(lightweight.revision, full.revision);
+    QCOMPARE(full.positions.size(), 4096);
+    QCOMPARE(lightweight.currentTime, full.currentTime);
+}\n\n'''
+          if addition not in text:
+              if anchor not in text:
+                  raise SystemExit(f'expected test anchor missing in {path}')
+              text = text.replace(anchor, addition + anchor)
+          path.write_text(text, encoding='utf-8')
+          PY
+          git diff --check
+
+      - name: Install Linux runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev libegl1 libxkbcommon-x11-0 libxcb-cursor0 libpulse0 libasound2 ninja-build
+
+      - name: Install Qt 6.8.3
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          arch: linux_gcc_64
+          modules: 'qtmultimedia qtshadertools'
+          cache: true
+
+      - name: Configure, build, test, and smoke-start
+        shell: bash
+        run: |
+          cmake -S mobile -B mobile/build-refine -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+          cmake --build mobile/build-refine --parallel 2
+          ctest --test-dir mobile/build-refine --output-on-failure
+          python mobile/tools/smoke_start.py mobile/build-refine --seconds 2.0
+
+      - name: Commit refined validated source
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add mobile/src/VisualizerModel.h mobile/src/VisualizerModel.cpp mobile/src/VisualizerItem.cpp mobile/src/AudioFeatureEngine.cpp mobile/shaders/visualizer.vert mobile/resources/presets/Default.mvpreset mobile/tests/tst_mobile_core.cpp
+          git diff --cached --check
+          git commit -m 'Keep mobile geometry resident across camera and timeline frames'
+          git push origin HEAD:codex/visualizer-mobile-gpu-foundation-v2
