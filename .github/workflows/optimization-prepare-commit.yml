@@ -1,0 +1,154 @@
+name: Prepare validated optimization commit
+
+on:
+  push:
+    branches: [codex/visualizer-rendering-optimization]
+    paths: [.github/workflows/optimization-prepare-commit.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    if: github.repository == 'MetriqOrg/Metriq-Visualizer' && github.ref == 'refs/heads/codex/visualizer-rendering-optimization'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Verify and apply exact tested patch
+        shell: bash
+        run: |
+          git merge-base --is-ancestor 96fe31c7f112083f6aea652689b01411979f49c0 HEAD
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          import subprocess
+          from pathlib import Path
+
+          encoded = ''.join(Path(f'.optimization-payload-{i}.txt').read_text().strip() for i in range(3))
+          # Remove a duplicated transport fragment before verifying the exact patch.
+          encoded = encoded.replace('Powpv9Gk8ZFIlSuX70MV2P9Gk8ZFIlSuX70MV2P9B3', 'Powpv9Gk8ZFIlSuX70MV2P9B3')
+          patch = gzip.decompress(base64.b64decode(encoded, validate=True))
+          expected = '651669debe78b1da8d98f0932ba72e56803e9d632c8a4e6fc1f8d803ec73176f'
+          if hashlib.sha256(patch).hexdigest() != expected:
+              raise SystemExit('Patch checksum mismatch; no source changes applied')
+          path = Path('/tmp/metriq-optimization.patch')
+          path.write_bytes(patch)
+          subprocess.run(['git', 'apply', '--check', str(path)], check=True)
+          subprocess.run(['git', 'apply', str(path)], check=True)
+          print('Exact tested patch checksum and application: passed')
+          PY
+          git rm .github/workflows/optimization-source-snapshot.yml .github/workflows/optimization-prepare-commit.yml .optimization-payload-0.txt .optimization-payload-1.txt .optimization-payload-2.txt
+          git diff --check
+      - name: Install system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 libpulse0 libportaudio2
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt ruff
+      - name: Validate final source
+        shell: bash
+        run: |
+          mkdir -p /tmp/optimization-evidence
+          python -m ruff check . 2>&1 | tee /tmp/optimization-evidence/ruff.log
+          python -m compileall -q .
+          python tools/verify_source.py --imports 2>&1 | tee /tmp/optimization-evidence/source.log
+          python -m unittest discover -s tests -p 'test_*.py' -v 2>&1 | tee /tmp/optimization-evidence/tests.log
+      - name: Prepare objects without changing any branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PARENT_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import base64
+          import hashlib
+          import json
+          import os
+          import urllib.request
+          from pathlib import Path
+
+          changed = [
+              '.github/workflows/quality.yml',
+              'PACKAGE_MANIFEST.json',
+              'docs/RENDERING_OPTIMIZATION.md',
+              'metriq_visualizer_3d.py',
+              'metriq_visualizer_app.py',
+              'metriq_visualizer_realtime.py',
+              'pyproject.toml',
+              'tests/test_render_optimization.py',
+              'tools/benchmark_realtime.py',
+          ]
+          removed = [
+              '.github/workflows/optimization-source-snapshot.yml',
+              '.github/workflows/optimization-prepare-commit.yml',
+              '.optimization-payload-0.txt',
+              '.optimization-payload-1.txt',
+              '.optimization-payload-2.txt',
+          ]
+          parent = os.environ['PARENT_SHA']
+          base = 'https://api.github.com/repos/MetriqOrg/Metriq-Visualizer/'
+          headers = {
+              'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+              'User-Agent': 'Metriq-Visualizer-Optimization-Validation',
+              'Content-Type': 'application/json',
+          }
+          def request(path, body=None):
+              data = None if body is None else json.dumps(body).encode()
+              req = urllib.request.Request(base + path, data=data, headers=headers, method='GET' if body is None else 'POST')
+              with urllib.request.urlopen(req, timeout=60) as response:
+                  return json.load(response)
+
+          original = request('git/commits/' + parent)
+          tree = []
+          hashes = {}
+          for name in changed:
+              content = Path(name).read_bytes()
+              hashes[name] = hashlib.sha256(content).hexdigest()
+              blob = request('git/blobs', {'content': base64.b64encode(content).decode(), 'encoding': 'base64'})
+              tree.append({'path': name, 'mode': '100644', 'type': 'blob', 'sha': blob['sha']})
+          tree.extend({'path': name, 'mode': '100644', 'type': 'blob', 'sha': None} for name in removed)
+          result_tree = request('git/trees', {'base_tree': original['tree']['sha'], 'tree': tree})
+          commit = request('git/commits', {
+              'message': 'Optimize existing realtime rendering and close preview regressions',
+              'tree': result_tree['sha'],
+              'parents': [parent],
+              'author': {'name': 'github-actions[bot]', 'email': '41898282+github-actions[bot]@users.noreply.github.com'},
+          })
+          record = {
+              'repository': 'MetriqOrg/Metriq-Visualizer',
+              'branch': 'codex/visualizer-rendering-optimization',
+              'base_main': '96fe31c7f112083f6aea652689b01411979f49c0',
+              'parent_sha': parent,
+              'commit_sha': commit['sha'],
+              'tree_sha': result_tree['sha'],
+              'patch_sha256': '651669debe78b1da8d98f0932ba72e56803e9d632c8a4e6fc1f8d803ec73176f',
+              'files_sha256': hashes,
+              'temporary_files_removed': removed,
+              'validation': 'ruff, compileall, source imports, unit/integration tests passed',
+              'branch_updated': False,
+          }
+          Path('/tmp/optimization-evidence/prepared-optimization-commit.json').write_text(json.dumps(record, indent=2) + '\n')
+          print(json.dumps(record, indent=2))
+          PY
+      - name: Upload validation evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: visualizer-prepared-optimization-commit
+          path: /tmp/optimization-evidence/
+          if-no-files-found: error
+          retention-days: 1
