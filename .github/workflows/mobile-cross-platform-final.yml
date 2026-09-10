@@ -1,0 +1,154 @@
+name: Mobile foundation final host validation
+
+on:
+  push:
+    branches:
+      - codex/visualizer-mobile-gpu-foundation-v2
+    paths:
+      - 'mobile/REQUEST_HOST_VALIDATION.txt'
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Validate ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            label: linux-x86_64
+            qt_arch: linux_gcc_64
+          - os: windows-2022
+            label: windows-x86_64
+            qt_arch: win64_msvc2022_64
+          - os: macos-14
+            label: macos-arm64
+            qt_arch: clang_64
+    env:
+      QT_QPA_PLATFORM: offscreen
+      QSG_RHI_BACKEND: software
+      QML_DISABLE_DISK_CACHE: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/visualizer-mobile-gpu-foundation-v2
+          fetch-depth: 0
+
+      - name: Install Linux runtime libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev libegl1 libxkbcommon-x11-0 libxcb-cursor0 libpulse0 libasound2 ninja-build
+
+      - name: Install Qt 6.8.3
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          arch: ${{ matrix.qt_arch }}
+          modules: 'qtmultimedia qtshadertools'
+          cache: true
+
+      - name: Configure
+        run: cmake -S mobile -B mobile/build-final-host -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+
+      - name: Compile C++, QML cache, and QSB shaders
+        run: cmake --build mobile/build-final-host --parallel 2
+
+      - name: Run native tests
+        run: ctest --test-dir mobile/build-final-host --output-on-failure
+
+      - name: Smoke-start software fallback
+        run: python mobile/tools/smoke_start.py mobile/build-final-host --seconds 2.0
+
+      - name: Create host result
+        shell: bash
+        run: |
+          mkdir -p validation-result
+          cat > validation-result/${{ matrix.label }}.json <<JSON
+          {
+            "host": "${{ matrix.label }}",
+            "runner": "${{ matrix.os }}",
+            "qt": "6.8.3",
+            "cmake_configure": "passed",
+            "native_build": "passed",
+            "qml_qsb_build": "passed",
+            "ctest": "passed",
+            "software_fallback_startup": "passed",
+            "commit": "${GITHUB_SHA}"
+          }
+          JSON
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mobile-host-${{ matrix.label }}
+          path: validation-result/${{ matrix.label }}.json
+          if-no-files-found: error
+          retention-days: 7
+
+  record:
+    name: Record final host validation
+    needs: validate
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/visualizer-mobile-gpu-foundation-v2
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mobile-host-*
+          path: validation-results
+          merge-multiple: true
+
+      - name: Verify and write validation record
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          expected = {'linux-x86_64', 'windows-x86_64', 'macos-arm64'}
+          results = {}
+          for path in Path('validation-results').glob('*.json'):
+              record = json.loads(path.read_text(encoding='utf-8'))
+              results[record['host']] = record
+          if set(results) != expected:
+              raise SystemExit(f'host result mismatch: {sorted(results)}')
+          required = ('cmake_configure', 'native_build', 'qml_qsb_build', 'ctest', 'software_fallback_startup')
+          for host, result in results.items():
+              failed = [key for key in required if result.get(key) != 'passed']
+              if failed:
+                  raise SystemExit(f'{host} failed fields: {failed}')
+          payload = {
+              'schema': 'metriq.mobile-cross-platform-validation',
+              'schema_version': 1,
+              'generated_at': datetime.now(timezone.utc).isoformat(),
+              'foundation_version': '0.1.0',
+              'hosts': results,
+              'all_host_checks_passed': True,
+              'limitations': [
+                  'Offscreen host builds are not physical iOS or Android device tests',
+                  'Software fallback was startup-tested; physical Metal/Vulkan drivers remain a device gate',
+                  'No signed APK, AAB, or IPA was produced by this host-validation workflow'
+              ]
+          }
+          Path('mobile/VALIDATION_HOSTS.json').write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          PY
+
+      - name: Commit validation evidence
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add mobile/VALIDATION_HOSTS.json
+          git diff --cached --check
+          git commit -m 'Record passing mobile host validation on Linux Windows and macOS'
+          git push origin HEAD:codex/visualizer-mobile-gpu-foundation-v2
