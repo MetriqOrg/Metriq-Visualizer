@@ -1,0 +1,361 @@
+name: Publish clean mobile GPU foundation
+
+on:
+  push:
+    branches:
+      - codex/visualizer-mobile-gpu-foundation-v2
+    paths:
+      - '.github/workflows/mobile-publish-clean.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    env:
+      QT_QPA_PLATFORM: offscreen
+      QSG_RHI_BACKEND: software
+      QML_DISABLE_DISK_CACHE: '1'
+      CLEAN_BRANCH: codex/visualizer-mobile-gpu-foundation-clean
+      BASE_COMMIT: bac4446aa6ffd33cedcbaedf17211f30ade63fec
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/visualizer-mobile-gpu-foundation-v2
+          fetch-depth: 0
+
+      - name: Normalize required source refinements idempotently
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(text: str, old: str, new: str, path: Path) -> str:
+              if new in text:
+                  return text
+              if old not in text:
+                  raise SystemExit(f'missing expected source fragment in {path}: {old!r}')
+              return text.replace(old, new)
+
+          model_h = Path('mobile/src/VisualizerModel.h')
+          text = model_h.read_text(encoding='utf-8')
+          text = replace(text, '[[nodiscard]] Snapshot snapshot() const;',
+                         '[[nodiscard]] Snapshot snapshot(bool includeGeometry = true) const;', model_h)
+          model_h.write_text(text, encoding='utf-8')
+
+          model_cpp = Path('mobile/src/VisualizerModel.cpp')
+          text = model_cpp.read_text(encoding='utf-8')
+          if '#include <QHash>\n' not in text:
+              text = text.replace('#include <QFileInfo>\n', '#include <QFileInfo>\n#include <QHash>\n')
+          if '#include <numbers>\n' not in text:
+              text = text.replace('#include <limits>\n', '#include <limits>\n#include <numbers>\n')
+          if '#include <utility>\n' not in text:
+              text = text.replace('#include <numbers>\n', '#include <numbers>\n#include <utility>\n')
+          text = text.replace('static_cast<float>(M_PI)', 'std::numbers::pi_v<float>')
+          text = text.replace('std::remainder<qreal>(', 'std::remainder(')
+          text = text.replace('geometry.insert(QStringLiteral("max_points"), qMax(1, m_points.size()));',
+                              'geometry.insert(QStringLiteral("max_points"), static_cast<double>(std::max<qsizetype>(1, m_points.size())));')
+          if 'VisualizerModel::Snapshot VisualizerModel::snapshot() const' in text:
+              text = text.replace('VisualizerModel::Snapshot VisualizerModel::snapshot() const',
+                                  'VisualizerModel::Snapshot VisualizerModel::snapshot(bool includeGeometry) const')
+              old = '''    result.positions.reserve(m_points.size());
+    result.colors.reserve(m_points.size());
+    result.sizes.reserve(m_points.size());
+    result.times.reserve(m_points.size());
+    for (const Point &point : m_points) {
+        result.positions.push_back(point.position);
+        result.colors.push_back(point.color);
+        result.sizes.push_back(point.size);
+        result.times.push_back(point.time);
+    }
+'''
+              new = '''    if (includeGeometry) {
+        result.positions.reserve(m_points.size());
+        result.colors.reserve(m_points.size());
+        result.sizes.reserve(m_points.size());
+        result.times.reserve(m_points.size());
+        for (const Point &point : m_points) {
+            result.positions.push_back(point.position);
+            result.colors.push_back(point.color);
+            result.sizes.push_back(point.size);
+            result.times.push_back(point.time);
+        }
+    }
+'''
+              text = replace(text, old, new, model_cpp)
+          if 'const float endTime = std::max(0.001F, raw.constLast().time);' in text:
+              text = text.replace('    const float endTime = std::max(0.001F, raw.constLast().time);\n'
+                                  '    for (int index = 0; index < raw.size(); ++index) {',
+                                  '    float monotonicTime = 0.0F;\n'
+                                  '    for (int index = 0; index < raw.size(); ++index) {')
+              text = text.replace('        point.time = source.time;\n        points.push_back(point);',
+                                  '        point.time = std::max(monotonicTime, source.time);\n'
+                                  '        monotonicTime = point.time;\n'
+                                  '        points.push_back(point);')
+              text = text.replace('    setCurrentTime(endTime);', '    setCurrentTime(duration());')
+          model_cpp.write_text(text, encoding='utf-8')
+
+          cpu_cpp = Path('mobile/src/CpuVisualizerItem.cpp')
+          text = cpu_cpp.read_text(encoding='utf-8')
+          if '#include <iterator>\n' not in text:
+              text = text.replace('#include <cmath>\n', '#include <cmath>\n#include <iterator>\n')
+          text = text.replace(
+              'connect(m_model, &VisualizerModel::geometryChanged, this, qOverload<>(&CpuVisualizerItem::update));\n'
+              '        connect(m_model, &VisualizerModel::currentTimeChanged, this, qOverload<>(&CpuVisualizerItem::update));\n'
+              '        connect(m_model, &VisualizerModel::visualChanged, this, qOverload<>(&CpuVisualizerItem::update));',
+              'connect(m_model, &VisualizerModel::geometryChanged, this, [this]() { update(); });\n'
+              '        connect(m_model, &VisualizerModel::currentTimeChanged, this, [this]() { update(); });\n'
+              '        connect(m_model, &VisualizerModel::visualChanged, this, [this]() { update(); });')
+          cpu_cpp.write_text(text, encoding='utf-8')
+
+          audio_h = Path('mobile/src/AudioFeatureEngine.h')
+          text = audio_h.read_text(encoding='utf-8')
+          if '#include <QByteArray>\n' not in text:
+              text = text.replace('#include <QAudioFormat>\n', '#include <QAudioFormat>\n#include <QByteArray>\n')
+          audio_h.write_text(text, encoding='utf-8')
+
+          audio_cpp = Path('mobile/src/AudioFeatureEngine.cpp')
+          text = audio_cpp.read_text(encoding='utf-8')
+          old = '''void AudioFeatureEngine::acceptFrame(const AudioFeatureFrame &frame)
+{
+    m_blocksInFlight = std::max(0, m_blocksInFlight - 1);
+    m_lastFrame = frame;'''
+          new = '''void AudioFeatureEngine::acceptFrame(const AudioFeatureFrame &frame)
+{
+    m_blocksInFlight = std::max(0, m_blocksInFlight - 1);
+    if (!m_active)
+        return;
+    m_lastFrame = frame;'''
+          if old in text:
+              text = text.replace(old, new)
+          audio_cpp.write_text(text, encoding='utf-8')
+
+          renderer = Path('mobile/src/VisualizerItem.cpp')
+          text = renderer.read_text(encoding='utf-8')
+          if '#include <QQuickWindow>\n' not in text:
+              text = text.replace('#include <QSGRendererInterface>\n', '#include <QSGRendererInterface>\n#include <QQuickWindow>\n')
+          if '    QVector<QVector3D> positions;\n' not in text:
+              text = text.replace('    QSGGeometryNode *head = nullptr;\n'
+                                  '    quint64 revision = std::numeric_limits<quint64>::max();',
+                                  '    QSGGeometryNode *head = nullptr;\n'
+                                  '    QVector<QVector3D> positions;\n'
+                                  '    QVector<QColor> colors;\n'
+                                  '    QVector<float> sizes;\n'
+                                  '    QVector<float> times;\n'
+                                  '    float trailLineWidth = -1.0F;\n'
+                                  '    quint64 revision = std::numeric_limits<quint64>::max();')
+          elif 'float trailLineWidth' not in text:
+              text = text.replace('    QVector<float> times;\n',
+                                  '    QVector<float> times;\n    float trailLineWidth = -1.0F;\n')
+          if 'const VisualizerModel::Snapshot snapshot = m_model->snapshot();' in text:
+              text = text.replace('    const VisualizerModel::Snapshot snapshot = m_model->snapshot();\n',
+                                  '    VisualizerModel::Snapshot snapshot = m_model->snapshot(false);\n')
+              text = text.replace('    if (rebuild) {\n        QVector<Vertex> vertices;',
+                                  '    if (rebuild) {\n'
+                                  '        snapshot = m_model->snapshot(true);\n'
+                                  '        scene->positions = snapshot.positions;\n'
+                                  '        scene->colors = snapshot.colors;\n'
+                                  '        scene->sizes = snapshot.sizes;\n'
+                                  '        scene->times = snapshot.times;\n'
+                                  '        QVector<Vertex> vertices;')
+          if 'if (!snapshot.positions.isEmpty()) {' in text:
+              text = text.replace('if (!snapshot.positions.isEmpty()) {', 'if (!scene->positions.isEmpty()) {')
+              text = text.replace('snapshot.times.cbegin(), snapshot.times.cend()', 'scene->times.cbegin(), scene->times.cend()')
+              text = text.replace('snapshot.times.cbegin(), iterator', 'scene->times.cbegin(), iterator')
+              text = text.replace('snapshot.positions.size() - 1', 'scene->positions.size() - 1')
+              text = text.replace('snapshot.positions.at(index)', 'scene->positions.at(index)')
+              text = text.replace('snapshot.colors.value(index, QColor(Qt::white))', 'scene->colors.value(index, QColor(Qt::white))')
+              text = text.replace('snapshot.sizes.value(index, 20.0F)', 'scene->sizes.value(index, 20.0F)')
+              text = text.replace('snapshot.times.value(index, snapshot.currentTime)', 'scene->times.value(index, snapshot.currentTime)')
+          if 'scene->trailLineWidth = snapshot.lineWidth;' not in text:
+              text = text.replace('        setVertices(scene->trail, vertices, QSGGeometry::DrawLineStrip, snapshot.lineWidth);\n',
+                                  '        setVertices(scene->trail, vertices, QSGGeometry::DrawLineStrip, snapshot.lineWidth);\n'
+                                  '        scene->trailLineWidth = snapshot.lineWidth;\n')
+          old_line = '''    setVertices(scene->head, headVertex, QSGGeometry::DrawPoints);
+
+    const QString renderMode'''
+          new_line = '''    setVertices(scene->head, headVertex, QSGGeometry::DrawPoints);
+    const float deviceScale = window() ? static_cast<float>(window()->devicePixelRatio()) : 1.0F;
+    const float physicalLineWidth = snapshot.lineWidth * std::max(deviceScale, 1.0F);
+    if (!qFuzzyCompare(scene->trailLineWidth + 1.0F, physicalLineWidth + 1.0F)) {
+        scene->trail->geometry()->setLineWidth(physicalLineWidth);
+        scene->trail->markDirty(QSGNode::DirtyGeometry);
+        scene->trailLineWidth = physicalLineWidth;
+    }
+
+    const QString renderMode'''
+          if old_line in text:
+              text = text.replace(old_line, new_line)
+          text = text.replace(
+              'configureMaterial(scene->grid, snapshot, viewport, snapshot.showAxes ? 1.0F : 0.0F, 1.0F, -1.0F);',
+              'configureMaterial(scene->grid, snapshot, viewport, snapshot.showAxes ? 1.0F : 0.0F, 0.0F, -1.0F);')
+          text = text.replace(
+              'snapshot.connectLines && !pointsOnly ? 1.0F : 0.0F, 1.0F);',
+              'snapshot.connectLines && !pointsOnly ? 1.0F : 0.0F, 0.0F);')
+          text = text.replace(
+              'configureMaterial(scene->points, snapshot, viewport, showPoints ? 1.0F : 0.0F, 1.0F);',
+              'configureMaterial(scene->points, snapshot, viewport, showPoints ? 1.0F : 0.0F, std::max(deviceScale, 1.0F));')
+          text = text.replace(
+              'snapshot.showHeadMarker ? 1.0F : 0.0F, 2.8F, -1.0F);',
+              'snapshot.showHeadMarker ? 1.0F : 0.0F, 2.8F * std::max(deviceScale, 1.0F), -1.0F);')
+          renderer.write_text(text, encoding='utf-8')
+
+          shader = Path('mobile/shaders/visualizer.vert')
+          text = shader.read_text(encoding='utf-8').replace(
+              'vPointPrimitive = ubuf.style.w > 1.1 ? 1.0 : 0.0;',
+              'vPointPrimitive = ubuf.style.w > 0.5 ? 1.0 : 0.0;')
+          shader.write_text(text, encoding='utf-8')
+
+          preset = Path('mobile/resources/presets/Default.mvpreset')
+          text = preset.read_text(encoding='utf-8').replace('"live_redraw_fps": 60', '"live_redraw_fps": 12')
+          text = text.replace('"head_size_scale": 0.24', '"head_size_scale": 0.0')
+          preset.write_text(text, encoding='utf-8')
+
+          tests = Path('mobile/tests/tst_mobile_core.cpp')
+          text = tests.read_text(encoding='utf-8').replace(
+              'QCOMPARE(a.positions.constFirst(), a.positions.constFirst());',
+              'QCOMPARE(a.positions.constFirst(), b.positions.constFirst());')
+          if 'qRegisterMetaType<AudioFeatureFrame>();\n    AudioAnalyzerWorker worker;' not in text:
+              text = text.replace('    AudioAnalyzerWorker worker;\n    QSignalSpy spy',
+                                  '    qRegisterMetaType<AudioFeatureFrame>();\n    AudioAnalyzerWorker worker;\n    QSignalSpy spy')
+          if 'void lightweightSnapshotAvoidsGeometryCopies();' not in text:
+              text = text.replace('    void liveHistoryIsBoundedWithoutChangingBudget();',
+                                  '    void liveHistoryIsBoundedWithoutChangingBudget();\n'
+                                  '    void lightweightSnapshotAvoidsGeometryCopies();')
+          if 'void MobileCoreTests::lightweightSnapshotAvoidsGeometryCopies()' not in text:
+              anchor = 'void MobileCoreTests::stateRoundTripPreservesUnknownSections()\n'
+              test = '''void MobileCoreTests::lightweightSnapshotAvoidsGeometryCopies()
+{
+    VisualizerModel model;
+    model.generateDemo(4096);
+    const auto lightweight = model.snapshot(false);
+    const auto full = model.snapshot(true);
+    QVERIFY(lightweight.positions.isEmpty());
+    QVERIFY(lightweight.colors.isEmpty());
+    QVERIFY(lightweight.sizes.isEmpty());
+    QVERIFY(lightweight.times.isEmpty());
+    QCOMPARE(lightweight.revision, full.revision);
+    QCOMPARE(full.positions.size(), 4096);
+    QCOMPARE(lightweight.currentTime, full.currentTime);
+}
+
+'''
+              if anchor not in text:
+                  raise SystemExit('missing test insertion anchor')
+              text = text.replace(anchor, test + anchor)
+          tests.write_text(text, encoding='utf-8')
+
+          qml = Path('mobile/qml/Main.qml')
+          text = qml.read_text(encoding='utf-8')
+          if 'Qt.application.state === Qt.ApplicationActive' not in text:
+              text = text.replace('        running: visualizerModel.playing && !audioEngine.active\n',
+                                  '        running: visualizerModel.playing && !audioEngine.active\n'
+                                  '                 && Qt.application.state === Qt.ApplicationActive\n')
+          if 'target: Qt.application' not in text:
+              anchor = '''    Connections {
+        target: rendererInfo
+'''
+              addition = '''    Connections {
+        target: Qt.application
+        function onStateChanged() {
+            if (Qt.application.state !== Qt.ApplicationActive && audioEngine.active)
+                audioEngine.stop()
+        }
+    }
+
+'''
+              if anchor not in text:
+                  raise SystemExit('missing QML application-state anchor')
+              text = text.replace(anchor, addition + anchor)
+          qml.write_text(text, encoding='utf-8')
+          PY
+          git diff --check
+
+      - name: Install Linux libraries and Qt 6.8.3
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev libegl1 libxkbcommon-x11-0 libxcb-cursor0 libpulse0 libasound2 ninja-build rsync
+
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          arch: linux_gcc_64
+          modules: 'qtmultimedia qtshadertools'
+          cache: true
+
+      - name: Validate source before publication
+        shell: bash
+        run: |
+          cmake -S mobile -B mobile/build-clean-publication -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+          cmake --build mobile/build-clean-publication --parallel 2
+          ctest --test-dir mobile/build-clean-publication --output-on-failure
+          python mobile/tools/smoke_start.py mobile/build-clean-publication --seconds 2.0
+
+      - name: Publish clean stacked branch
+        shell: bash
+        run: |
+          rm -rf /tmp/metriq-mobile-clean
+          git worktree add --detach /tmp/metriq-mobile-clean "${BASE_COMMIT}"
+          cd /tmp/metriq-mobile-clean
+          git switch -c "${CLEAN_BRANCH}"
+          rsync -a \
+            --exclude 'build-*' \
+            --exclude '.qt' \
+            --exclude 'REQUEST_*.txt' \
+            --exclude 'VALIDATION_*.json' \
+            "${GITHUB_WORKSPACE}/mobile/" mobile/
+          cp "${GITHUB_WORKSPACE}/docs/MOBILE_GPU_FOUNDATION.md" docs/MOBILE_GPU_FOUNDATION.md
+          chmod +x mobile/scripts/*.sh mobile/tools/smoke_start.py
+          python - <<'PY'
+          import hashlib
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          files = sorted(p for p in Path('mobile').rglob('*') if p.is_file())
+          payload = {
+              'schema': 'metriq.mobile-clean-branch-validation',
+              'schema_version': 1,
+              'generated_at': datetime.now(timezone.utc).isoformat(),
+              'foundation_version': '0.1.0',
+              'desktop_base': 'bac4446aa6ffd33cedcbaedf17211f30ade63fec',
+              'host_validation': {
+                  'qt': '6.8.3',
+                  'cmake': 'passed',
+                  'cxx_qml_qsb_build': 'passed',
+                  'ctest': 'passed',
+                  'software_fallback_startup': 'passed'
+              },
+              'source_sha256': {
+                  p.as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                  for p in files
+              },
+              'limitations': [
+                  'Linux offscreen host validation is not a physical mobile-device test',
+                  'Metal/Vulkan hardware rendering and microphone behavior remain device gates',
+                  'No store-signed artifact is claimed by this record'
+              ]
+          }
+          Path('mobile/VALIDATION_SOURCE.json').write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          PY
+          git add mobile docs/MOBILE_GPU_FOUNDATION.md
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Add native mobile GPU foundation for iOS and Android'
+          git push --force origin HEAD:"${CLEAN_BRANCH}"
+
+      - name: Archive clean mobile source
+        shell: bash
+        run: |
+          cd /tmp/metriq-mobile-clean
+          git archive --format=zip --output="${GITHUB_WORKSPACE}/Metriq-Visualizer-Mobile-GPU-Foundation.zip" HEAD mobile docs/MOBILE_GPU_FOUNDATION.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Metriq-Visualizer-Mobile-GPU-Foundation-Source
+          path: Metriq-Visualizer-Mobile-GPU-Foundation.zip
+          if-no-files-found: error
+          retention-days: 14
