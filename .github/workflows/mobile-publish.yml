@@ -1,0 +1,45 @@
+name: Publish mobile foundation source
+
+on:
+  push:
+    branches:
+      - codex/visualizer-mobile-gpu-foundation
+    paths:
+      - '.github/workflows/mobile-publish.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: github.repository == 'MetriqOrg/Metriq-Visualizer' && github.ref == 'refs/heads/codex/visualizer-mobile-gpu-foundation'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/visualizer-mobile-gpu-foundation
+          fetch-depth: 0
+      - name: Verify and unpack exact mobile source
+        shell: bash
+        run: |
+          cat .mobile-publish-0.txt .mobile-publish-1.txt .mobile-publish-2.txt .mobile-publish-3.txt \
+            | tr -d '\r\n' \
+            | base64 --decode > /tmp/metriq-mobile-foundation.tar.gz
+          echo '60556b51ff720ca4b262ddb6e903c3bfb8fd94d45101c4559856c3471799214d  /tmp/metriq-mobile-foundation.tar.gz' \
+            | sha256sum --check --strict
+          tar -xzf /tmp/metriq-mobile-foundation.tar.gz
+          test -f mobile/CMakeLists.txt
+          test -f mobile/src/visualizergpuitem.cpp
+          test -f mobile/src/cpuvisualizeritem.cpp
+          test -f mobile/qml/Main.qml
+          rm .mobile-publish-0.txt .mobile-publish-1.txt .mobile-publish-2.txt .mobile-publish-3.txt
+      - name: Commit source without changing main
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add mobile .mobile-publish-0.txt .mobile-publish-1.txt .mobile-publish-2.txt .mobile-publish-3.txt
+          git diff --cached --check
+          git commit -m 'Add GPU-first mobile application foundation'
+          git push origin HEAD:codex/visualizer-mobile-gpu-foundation
