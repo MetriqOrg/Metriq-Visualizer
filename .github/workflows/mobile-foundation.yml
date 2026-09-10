@@ -1,0 +1,69 @@
+name: Mobile GPU foundation
+
+on:
+  push:
+    paths:
+      - 'mobile/**'
+      - 'docs/MOBILE_GPU_FOUNDATION.md'
+      - '.github/workflows/mobile-foundation.yml'
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - 'docs/MOBILE_GPU_FOUNDATION.md'
+      - '.github/workflows/mobile-foundation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  host-build:
+    name: Native host build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            qt_arch: linux_gcc_64
+          - os: windows-2022
+            qt_arch: win64_msvc2022_64
+          - os: macos-14
+            qt_arch: clang_64
+
+    env:
+      QT_QPA_PLATFORM: offscreen
+      QSG_RHI_BACKEND: software
+      QML_DISABLE_DISK_CACHE: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux graphics and audio runtime libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev libegl1 libxkbcommon-x11-0 libxcb-cursor0 libpulse0 libasound2 ninja-build
+
+      - name: Install Qt 6.8 mobile-host toolchain
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          arch: ${{ matrix.qt_arch }}
+          modules: 'qtmultimedia qtshadertools'
+          cache: true
+
+      - name: Configure
+        run: >-
+          cmake -S mobile -B mobile/build-ci -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_TESTING=ON
+
+      - name: Compile C++, QML cache and portable QSB shaders
+        run: cmake --build mobile/build-ci --config Release --parallel 2
+
+      - name: Run native regression tests
+        run: ctest --test-dir mobile/build-ci -C Release --output-on-failure
+
+      - name: Verify QML application startup and CPU fallback
+        run: python mobile/tools/smoke_start.py mobile/build-ci --seconds 2.0
