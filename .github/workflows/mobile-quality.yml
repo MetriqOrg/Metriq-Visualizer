@@ -35,6 +35,9 @@ jobs:
           cache: true
       - name: Install Ninja
         uses: seanmiddleditch/gha-setup-ninja@v6
+      - name: Select MSVC toolchain
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
       - name: Configure
         run: qt-cmake -S mobile -B build-mobile -GNinja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
       - name: Build
