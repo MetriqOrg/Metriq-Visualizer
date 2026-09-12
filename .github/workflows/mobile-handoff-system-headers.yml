@@ -10,14 +10,17 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     steps:
-      - name: Install graphics development headers
+      - name: Install graphics validation dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y libgl-dev libegl-dev libopengl-dev libgles-dev
+          sudo apt-get install -y libgl-dev libegl-dev libopengl-dev libgles-dev libxcb-cursor0
           tar -czf "$RUNNER_TEMP/gl-headers.tar.gz" -C /usr/include GL EGL KHR GLES GLES2 GLES3
+          tar -czf "$RUNNER_TEMP/xcb-cursor-runtime.tar.gz" -C /usr/lib/x86_64-linux-gnu libxcb-cursor.so.0 libxcb-cursor.so.0.0.0
       - uses: actions/upload-artifact@v4
         with:
-          name: mobile-handoff-gl-headers
-          path: ${{ runner.temp }}/gl-headers.tar.gz
+          name: mobile-handoff-gl-runtime
+          path: |
+            ${{ runner.temp }}/gl-headers.tar.gz
+            ${{ runner.temp }}/xcb-cursor-runtime.tar.gz
           retention-days: 1
           if-no-files-found: error
