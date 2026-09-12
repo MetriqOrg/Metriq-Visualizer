@@ -1,0 +1,39 @@
+name: Mobile handoff SDK
+
+on:
+  push:
+    branches: [codex/mobile-handoff-validation]
+    paths: [.github/workflows/mobile-handoff-sdk.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  sdk:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          arch: linux_gcc_64
+          modules: 'qtmultimedia qtshadertools'
+          cache: true
+      - name: Archive official SDK for offline compile validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$QT_ROOT_DIR"
+          test -d "$QT_ROOT_DIR/include/QtQuick"
+          tar -czf "$RUNNER_TEMP/qt-mobile-sdk.tar.gz" -C "$QT_ROOT_DIR" .
+          cd "$RUNNER_TEMP"
+          sha256sum qt-mobile-sdk.tar.gz > qt-mobile-sdk.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mobile-handoff-qt-sdk
+          path: |
+            ${{ runner.temp }}/qt-mobile-sdk.tar.gz
+            ${{ runner.temp }}/qt-mobile-sdk.sha256
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
