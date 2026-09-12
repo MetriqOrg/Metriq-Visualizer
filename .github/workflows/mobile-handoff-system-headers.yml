@@ -1,0 +1,23 @@
+name: Mobile handoff system headers
+on:
+  push:
+    branches: [codex/mobile-handoff-validation]
+    paths: [.github/workflows/mobile-handoff-system-headers.yml]
+permissions:
+  contents: read
+jobs:
+  headers:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Install graphics development headers
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libgl-dev libegl-dev libopengl-dev libgles-dev
+          tar -czf "$RUNNER_TEMP/gl-headers.tar.gz" -C /usr/include GL EGL KHR GLES GLES2 GLES3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mobile-handoff-gl-headers
+          path: ${{ runner.temp }}/gl-headers.tar.gz
+          retention-days: 1
+          if-no-files-found: error
