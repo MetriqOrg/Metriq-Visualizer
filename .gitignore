@@ -1,37 +1,18 @@
-# Python
-__pycache__/
-*.py[cod]
-*.pyd
-*.so
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
-.coverage
-htmlcov/
-
-# Environments and builds
 .venv/
-venv/
-build-out/
-build/lib/
-build/bdist.*/
-build/*.spec
-dist/
-*.egg-info/
-
-# Local runtime state
-.metriq-cache/
-.metriq-merge-backup/
-.metriq-merge-report.json
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.mp4
+*.wav
 *.tmp
-*.tmp.npz
-
-# Editors / OS
 .DS_Store
-Thumbs.db
-.vscode/
-.idea/
 
-# Local exports
-exports/
-render-output/
+# PyInstaller build output
+dist/
+build/Metriq Visualizer/
+*.spec
+
+# Reference audio decoded once by the v1.10.18 code (see tests/generate_decoded_fixtures.py)
+!tests/goldens/**/*.wav

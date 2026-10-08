@@ -1,6 +1,6 @@
 # Copyright (c) Metriq Foundation, Inc.
 # This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
-"""Small, dependency-free helpers for crash-safe local file replacement."""
+"""Dependency-free atomic replacement helpers for local files and directories."""
 
 from __future__ import annotations
 
@@ -9,30 +9,16 @@ import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from pathlib import Path
+import shutil
 
 
 @contextmanager
-def atomic_destination(
-    destination: str | Path,
-    *,
-    suffix: str = ".tmp",
-) -> Iterator[Path]:
-    """Yield a unique temporary path and atomically replace *destination*.
-
-    The temporary file is created in the destination directory so ``replace``
-    stays on the same filesystem. Existing destination data is left untouched
-    unless the complete write succeeds.
-    """
-
+def atomic_destination(destination: str | Path, *, suffix: str = ".tmp") -> Iterator[Path]:
     output = Path(destination).expanduser()
     output.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{output.name}.",
-        suffix=suffix,
-        dir=output.parent,
-    )
+    descriptor, name = tempfile.mkstemp(prefix=f".{output.name}.", suffix=suffix, dir=output.parent)
     os.close(descriptor)
-    temporary = Path(temporary_name)
+    temporary = Path(name)
     try:
         yield temporary
         if not temporary.is_file():
@@ -43,18 +29,36 @@ def atomic_destination(
             temporary.unlink(missing_ok=True)
 
 
-def atomic_write_text(
-    destination: str | Path,
-    text: str,
-    *,
-    encoding: str = "utf-8",
-) -> Path:
-    """Write text through a unique same-directory temporary file."""
-
+@contextmanager
+def atomic_directory(destination: str | Path) -> Iterator[Path]:
     output = Path(destination).expanduser()
-    with atomic_destination(output) as temporary, temporary.open(
-        "w", encoding=encoding, newline=""
-    ) as handle:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=f".{output.name}.", suffix=".tmp", dir=output.parent))
+    backup = output.with_name(f".{output.name}.old")
+    try:
+        yield temporary
+        if not temporary.is_dir():
+            raise RuntimeError(f"Temporary directory was not produced: {temporary}")
+        if output.exists():
+            with suppress(OSError):
+                shutil.rmtree(backup)
+            output.replace(backup)
+        try:
+            temporary.replace(output)
+        except Exception:
+            if backup.exists() and not output.exists():
+                backup.replace(output)
+            raise
+        with suppress(OSError):
+            shutil.rmtree(backup)
+    finally:
+        with suppress(OSError):
+            shutil.rmtree(temporary)
+
+
+def atomic_write_text(destination: str | Path, text: str, *, encoding: str = "utf-8") -> Path:
+    output = Path(destination).expanduser()
+    with atomic_destination(output) as temporary, temporary.open("w", encoding=encoding, newline="") as handle:
         handle.write(text)
         handle.flush()
         with suppress(OSError):
@@ -62,4 +66,4 @@ def atomic_write_text(
     return output
 
 
-__all__ = ["atomic_destination", "atomic_write_text"]
+__all__ = ["atomic_destination", "atomic_directory", "atomic_write_text"]

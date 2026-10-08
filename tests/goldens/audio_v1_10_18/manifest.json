@@ -1,0 +1,36 @@
+{
+  "tag": "baseline-v1.10.18",
+  "commit": "c3dfc9086a8383e2f5adcd0d00192d07b926721e",
+  "core_sha256": "d62b69f136b2f4f0ca805de6ffee8b0f621d18134ef1e37d8dabcfad2119d95c",
+  "numpy": "2.4.6",
+  "scipy": "1.17.1",
+  "librosa": "0.11.0",
+  "settings": {
+    "sample_rate": 22050,
+    "n_fft": 2048,
+    "hop_length": 256
+  },
+  "additional_profiles": {
+    "native_large": {
+      "sample_rate": 44100,
+      "n_fft": 4096,
+      "hop_length": 512
+    },
+    "odd_fft": {
+      "sample_rate": 22050,
+      "n_fft": 2049,
+      "hop_length": 257
+    }
+  },
+  "fixture_sha256": {
+    "tones_noise": "764b1e20e323a6280ad8f198e5c75707fe690bdaeddb246fd0ef935f9f1863cd",
+    "speech_like": "c640febce4331648c45bf9584b170949ed5ab850ec6c9c22b339ee5631b5e958",
+    "silence": "d1478b62f6cde68fe22fab1558867e81a0c64d148ad6d8850dd0da7eae45ece1"
+  },
+  "decoded_22050_sha256": {
+    "tones_noise": "12ef356f117acda99fc7fea776c6aed3effb058c353bb541f260c1fd3c6e01c5",
+    "speech_like": "33cf90126fb27efae379c48650bbad3cceb9f68044baf1613ee3ab58ec01187f",
+    "silence": "d22f7d81b40ee406db039d400d4a10bd6bc6aa45b209b1858212fb70acd4f9b1"
+  },
+  "decoded_with": "ffmpeg version 9.0.1 Copyright (c) 2000-2026 the FFmpeg developers"
+}
