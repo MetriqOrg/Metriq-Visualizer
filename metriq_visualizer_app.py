@@ -17,6 +17,9 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
 
+# A signed macOS app bundle must not gain __pycache__ files after launch, or the signature breaks.
+sys.dont_write_bytecode = True
+
 import matplotlib
 import numpy as np
 import pyqtgraph as pg
@@ -130,7 +133,7 @@ from metriq_visualizer_diagnostics import (
 )
 
 APP_NAME = "Metriq Visualizer"
-APP_VERSION = "1.10.18"
+APP_VERSION = "1.13.0"
 APP_TITLE = APP_NAME
 APP_WINDOW_TITLE = f"{APP_NAME} v{APP_VERSION}"
 FUN_EDITION = True
