@@ -2552,6 +2552,10 @@ class MainWindow(QMainWindow):
         export_action.triggered.connect(self.export_render_dialog)
         self.file_menu.addAction(batch_action)
         self.file_menu.addAction(export_action)
+        self.export_mapped_data_action = QAction("Export mapped data (CSV / NPZ)…", self)
+        self.export_mapped_data_action.setEnabled(False)
+        self.export_mapped_data_action.triggered.connect(self.export_mapped_data_dialog)
+        self.file_menu.addAction(self.export_mapped_data_action)
         self.file_menu.addSeparator()
         quit_action = QAction("Quit", self)
         quit_action.triggered.connect(self.close)
@@ -5827,6 +5831,8 @@ class MainWindow(QMainWindow):
             self.load_file(path)
 
     def load_file(self, path: str) -> None:
+        if hasattr(self, "export_mapped_data_action"):
+            self.export_mapped_data_action.setEnabled(False)
         self._clear_export_preview_session()
         self.file_path = path
         self.file_label.setText(path)
@@ -5957,6 +5963,8 @@ class MainWindow(QMainWindow):
             return
         geom = self._apply_display_labels_to_geom(geom)
         self.geometry_data = geom
+        if hasattr(self, "export_mapped_data_action"):
+            self.export_mapped_data_action.setEnabled(self.analysis is not None)
         self._rgba_full = np.asarray(rgba_full, dtype=np.float32)
         self.analysis_tabs.set_data(self.analysis, geom)
         self._clear_export_preview_session()
@@ -6433,6 +6441,35 @@ class MainWindow(QMainWindow):
             self._set_status(f"Exported mapped data CSV: {path}", color=ACCENT)
         else:
             self._set_status(f"Exported mapped data CSV ({start_time:0.02f}s → {end_time:0.02f}s): {path}", color=ACCENT)
+
+    def export_mapped_data_dialog(self) -> None:
+        analysis = self.analysis
+        geometry = self.geometry_data
+        if analysis is None or geometry is None:
+            QMessageBox.information(self, APP_TITLE, "Load and analyze a file before exporting mapped data.")
+            return
+        from metriq_visualizer_data_export import export_analysis_csv, export_analysis_npz
+
+        default_name = Path(self.file_path).with_suffix(".csv") if self.file_path else Path.home() / "metriq_visualizer_data.csv"
+        path, selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Export mapped data",
+            str(default_name),
+            "CSV files (*.csv);;NumPy archives (*.npz)",
+            "CSV files (*.csv)",
+        )
+        if not path:
+            return
+        use_npz = Path(path).suffix.lower() == ".npz" or (
+            not Path(path).suffix and "npz" in selected_filter.lower()
+        )
+        exporter = export_analysis_npz if use_npz else export_analysis_csv
+        try:
+            output = exporter(path, analysis, geometry)
+        except Exception as exc:
+            QMessageBox.warning(self, APP_TITLE, f"Could not export mapped data: {exc}")
+            return
+        self._set_status(f"Exported mapped data to {output}", color=ACCENT)
 
 
     def export_render_dialog(self) -> None:
@@ -7139,6 +7176,8 @@ def _core_on_analysis_finished(self, job_id: int, result: object) -> None:
 
 
 def _core_load_file(self, path: str) -> None:
+    if hasattr(self, "export_mapped_data_action"):
+        self.export_mapped_data_action.setEnabled(False)
     if not is_table_file(path):
         _original_load_file(self, path)
         return
