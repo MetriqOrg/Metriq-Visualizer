@@ -5,12 +5,16 @@
 from __future__ import annotations
 
 import math
+import logging
+import multiprocessing
+from collections import deque
+from concurrent.futures import ProcessPoolExecutor
 import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterable, Iterator
 
 import cv2
 import numpy as np
@@ -110,6 +114,11 @@ class ExportOptions:
     video_bitrate_mbps: float = 0.0
     start_time: float = 0.0
     end_time: float | None = None
+    renderer: str = "auto"
+
+    def __post_init__(self) -> None:
+        if self.renderer not in {"auto", "cpu", "gpu"}:
+            raise ValueError(f"Unknown export renderer: {self.renderer!r}")
 
 
 APP_BG = (7, 11, 17)
@@ -596,6 +605,9 @@ class OffscreenGeometryRenderer:
             dominant_hz = float(self.analysis.features["dominant_freq_hz"][state.head_idx])
         self.hud_text.set_text(f"{current_time:6.2f} s   •   {dominant_hz:7.1f} Hz")
 
+        return self._draw_frame()
+
+    def _draw_frame(self) -> np.ndarray:
         self.canvas.draw()
         return _figure_to_rgba(self.canvas)
 
@@ -726,7 +738,15 @@ class ExportPreviewSession:
         self.analysis = analysis
         self.geom = geom
         self.options = options
-        self.geometry_renderer = OffscreenGeometryRenderer(analysis, geom, options)
+        self.geometry_renderer = None
+        if options.renderer == "gpu" and options.layout.geometry.enabled:
+            try:
+                from metriq_visualizer_gpu_export import GPUExportRenderer
+                self.geometry_renderer = GPUExportRenderer(analysis, geom, options)
+            except Exception as exc:
+                logging.getLogger(__name__).warning("GPU renderer unavailable; falling back to CPU: %s", exc)
+        if self.geometry_renderer is None:
+            self.geometry_renderer = OffscreenGeometryRenderer(analysis, geom, options)
         panel_names = ("spectrogram", "chromagram", "mfcc", "traces")
         need_panels = bool(options.include_panels) and any(options.layout.item(name).enabled for name in panel_names)
         self.panel_renderer = AnalysisCardRenderer(analysis, geom, options) if need_panels else None
@@ -734,6 +754,8 @@ class ExportPreviewSession:
         self.preview_reader = VideoPreviewReader(analysis.source_path) if need_preview else None
         self._last_request_key: tuple | None = None
         self._last_frame: np.ndarray | None = None
+        self._static_layers: dict = {}
+        self._composition_key: tuple | None = None
 
     def render_frame(self, current_time: float, layout: ExportLayoutSpec | None = None, output_size: tuple[int, int] | None = None) -> np.ndarray:
         effective_layout = (layout or self.options.layout).clone().clamp()
@@ -747,7 +769,7 @@ class ExportPreviewSession:
         if self._last_request_key == request_key and self._last_frame is not None:
             return np.asarray(self._last_frame, dtype=np.uint8)
         cards = {
-            "geometry": self.geometry_renderer.render(current_time) if effective_layout.geometry.enabled else None,
+            "geometry": self._render_geometry(current_time) if effective_layout.geometry.enabled else None,
             "preview": None,
             "spectrogram": None,
             "chromagram": None,
@@ -760,6 +782,10 @@ class ExportPreviewSession:
             for name in ("spectrogram", "chromagram", "mfcc", "traces"):
                 if effective_layout.item(name).enabled:
                     cards[name] = self.panel_renderer.render_card(name, current_time)
+        composition_key = request_key[1:]
+        if composition_key != self._composition_key:
+            self._static_layers.clear()
+            self._composition_key = composition_key
         frame_rgba = compose_export_frame_rgba(
             cards=cards,
             output_size=effective_output,
@@ -768,12 +794,36 @@ class ExportPreviewSession:
             options=self.options,
             current_time=current_time,
             analysis=self.analysis,
+            static_layers=self._static_layers,
         )
         self._last_request_key = request_key
         self._last_frame = np.asarray(frame_rgba, dtype=np.uint8)
         return np.asarray(self._last_frame, dtype=np.uint8)
 
+    @property
+    def active_renderer(self) -> str:
+        return "cpu" if isinstance(self.geometry_renderer, OffscreenGeometryRenderer) else "gpu"
+
+    def _render_geometry(self, current_time: float) -> np.ndarray:
+        try:
+            return self.geometry_renderer.render(current_time)
+        except Exception as exc:
+            if isinstance(self.geometry_renderer, OffscreenGeometryRenderer):
+                raise
+            logging.getLogger(__name__).warning("GPU renderer failed; falling back to CPU: %s", exc)
+            self._close_gpu_renderer()
+            self.geometry_renderer = OffscreenGeometryRenderer(self.analysis, self.geom, self.options)
+            return self.geometry_renderer.render(current_time)
+
+    def _close_gpu_renderer(self) -> None:
+        try:
+            self.geometry_renderer.close()
+        except Exception:
+            logging.getLogger(__name__).debug("GPU renderer cleanup failed", exc_info=True)
+
     def close(self) -> None:
+        if not isinstance(self.geometry_renderer, OffscreenGeometryRenderer):
+            self._close_gpu_renderer()
         if self.preview_reader is not None:
             self.preview_reader.close()
 
@@ -809,7 +859,7 @@ def _ensure_rgba(image: np.ndarray | Image.Image) -> Image.Image:
         array = np.concatenate([array.astype(np.uint8), alpha], axis=2)
     elif array.shape[2] != 4:
         raise ValueError("Image array must have 3 or 4 channels.")
-    return Image.fromarray(array.astype(np.uint8), mode="RGBA")
+    return Image.fromarray(np.asarray(array, dtype=np.uint8), mode="RGBA")
 
 
 
@@ -949,6 +999,7 @@ def compose_export_frame_rgba(
     options: ExportOptions,
     current_time: float,
     analysis: AnalysisResult | None,
+    static_layers: dict | None = None,
 ) -> np.ndarray:
     width, height = output_size
     margin = max(20, int(round(min(width, height) * 0.018)))
@@ -964,7 +1015,12 @@ def compose_export_frame_rgba(
         payload = cards.get(name)
         if payload is None:
             if name == "preview" and source_path:
-                overlay = _audio_only_preview((w, h), source_path)
+                preview_key = ("audio", w, h, source_path)
+                overlay = static_layers.get(preview_key) if static_layers is not None else None
+                if overlay is None:
+                    overlay = _audio_only_preview((w, h), source_path)
+                    if static_layers is not None:
+                        static_layers[preview_key] = overlay
             else:
                 continue
         else:
@@ -975,7 +1031,12 @@ def compose_export_frame_rgba(
                 fit_mode=str(getattr(rect, "fit_mode", "contain")),
                 trim=bool(name != "geometry"),
             )
-        card = _card_layer((w, h), float(rect.background_alpha), title=LAYOUT_ITEM_TITLES[name], show_title=bool(rect.show_title))
+        card_key = (name, w, h, float(rect.background_alpha), bool(rect.show_title))
+        card = static_layers.get(card_key) if static_layers is not None else None
+        if card is None:
+            card = _card_layer((w, h), float(rect.background_alpha), title=LAYOUT_ITEM_TITLES[name], show_title=bool(rect.show_title))
+            if static_layers is not None:
+                static_layers[card_key] = card
         card = Image.alpha_composite(card, overlay)
         _paste_rgba(base, card, (x, y))
 
@@ -1044,6 +1105,104 @@ def _mux_audio_if_possible(
 
 
 
+CPU_FRAME_TIMEOUT = 120.0
+_CPU_WORKER_SESSION: ExportPreviewSession | None = None
+
+
+def _initialize_cpu_worker(analysis: AnalysisResult, geom: GeometryResult, options: ExportOptions) -> None:
+    global _CPU_WORKER_SESSION
+    _CPU_WORKER_SESSION = ExportPreviewSession(analysis, geom, replace(options, renderer="cpu"))
+    import atexit
+    atexit.register(_CPU_WORKER_SESSION.close)
+
+
+def _render_cpu_worker(current_time: float) -> np.ndarray:
+    if _CPU_WORKER_SESSION is None:
+        raise RuntimeError("CPU export worker was not initialized.")
+    return _CPU_WORKER_SESSION.render_frame(current_time)
+
+
+def _stop_cpu_pool(pool) -> None:
+    # Python 3.11 has no public terminate_workers API. Capture the worker handles
+    # before shutdown; all waits are bounded, including cleanup after a stall.
+    processes = tuple((getattr(pool, "_processes", None) or {}).values())
+    for process in processes:
+        if process.is_alive():
+            process.terminate()
+    for process in processes:
+        process.join(timeout=1.0)
+        if process.is_alive():
+            process.kill()
+            process.join(timeout=1.0)
+    pool.shutdown(wait=False, cancel_futures=True)
+
+
+def iter_export_frames(
+    analysis: AnalysisResult, geom: GeometryResult, options: ExportOptions,
+    times: Iterable[float], *, parallel: bool | None = None,
+) -> Iterator[np.ndarray]:
+    """Yield ordered frames with at most two render processes and two queued frames.
+
+    Auto and CPU use the verified faster serial Agg path. Explicit parallel=True
+    uses two identical Agg workers; GPU owns one isolated context. Failed CPU workers resume serially
+    at the failed frame, without duplicating or skipping frames.
+    """
+    # Serial optimized Agg won the completed short-clip benchmark medians at
+    # both resolutions. Do not infer an unmeasured parallel crossover or select
+    # GPU automatically. Callers may explicitly benchmark the bounded workers.
+    remaining = iter(times)
+    from itertools import chain
+    if parallel is None:
+        parallel = False
+    pool = None
+    session = None
+    pending = deque()
+    try:
+        if parallel and options.renderer != "gpu":
+            try:
+                pool = ProcessPoolExecutor(max_workers=2, mp_context=multiprocessing.get_context("spawn"),
+                    initializer=_initialize_cpu_worker, initargs=(analysis, geom, options))
+                for _ in range(2):
+                    try:
+                        t = next(remaining)
+                    except StopIteration:
+                        break
+                    pending.append((t, None))
+                    pending[-1] = (t, pool.submit(_render_cpu_worker, t))
+                while pending:
+                    t, future = pending[0]
+                    frame = future.result(timeout=CPU_FRAME_TIMEOUT)
+                    pending.popleft()
+                    yield frame
+                    try:
+                        t = next(remaining)
+                    except StopIteration:
+                        continue
+                    pending.append((t, None))
+                    pending[-1] = (t, pool.submit(_render_cpu_worker, t))
+                return
+            except Exception as exc:
+                logging.getLogger(__name__).warning("CPU frame workers unavailable; using serial CPU: %s", exc)
+                remaining = chain((t for t, _ in pending), remaining)
+                for _, future in pending:
+                    if future is not None:
+                        future.cancel()
+                if pool is not None:
+                    _stop_cpu_pool(pool)
+                pool = None
+        session = ExportPreviewSession(analysis, geom, options)
+        for t in remaining:
+            yield session.render_frame(t)
+    finally:
+        if session is not None:
+            session.close()
+        if pool is not None:
+            if pending:
+                _stop_cpu_pool(pool)
+            else:
+                pool.shutdown(wait=True, cancel_futures=True)
+
+
 def _render_export_video_ffmpeg(
     analysis: AnalysisResult,
     geom: GeometryResult,
@@ -1061,7 +1220,8 @@ def _render_export_video_ffmpeg(
     output_path = str(options.output_path)
     temp_root = Path(tempfile.mkdtemp(prefix="metriq_visualizer_render_ffmpeg_"))
     encoded_video = str(temp_root / "encoded_render.mp4")
-    session = ExportPreviewSession(analysis, geom, options)
+    frames = iter_export_frames(analysis, geom, options,
+        (min(clip_end, clip_start + i / float(max(1, int(options.fps)))) for i in range(total_frames)))
     stderr_text = b""
     proc: subprocess.Popen | None = None
     try:
@@ -1081,9 +1241,7 @@ def _render_export_video_ffmpeg(
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         if progress_callback is not None:
             progress_callback(0.0, f"Encoding with {encoder.label} (FFmpeg)…")
-        for frame_idx in range(total_frames):
-            current_time = min(clip_end, clip_start + frame_idx / float(max(1, int(options.fps))))
-            frame_rgba = session.render_frame(current_time=current_time)
+        for frame_idx, frame_rgba in enumerate(frames):
             frame_rgb = np.ascontiguousarray(frame_rgba[:, :, :3], dtype=np.uint8)
             if proc.stdin is None:
                 raise RuntimeError("FFmpeg stdin pipe was not available.")
@@ -1126,7 +1284,7 @@ def _render_export_video_ffmpeg(
                 proc.kill()
             except Exception:
                 pass
-        session.close()
+        frames.close()
         shutil.rmtree(temp_root, ignore_errors=True)
 
 
@@ -1155,7 +1313,8 @@ def _render_export_video_legacy_opencv(
     progress_callback: Callable[[float, str], None] | None = None,
 ) -> str:
     output_path = str(options.output_path)
-    session = ExportPreviewSession(analysis, geom, options)
+    frames = iter_export_frames(analysis, geom, options,
+        (min(clip_end, clip_start + i / float(max(1, int(options.fps)))) for i in range(total_frames)))
     temp_root = Path(tempfile.mkdtemp(prefix="metriq_visualizer_render_opencv_"))
     silent_video = str(temp_root / "silent_render.mp4")
 
@@ -1166,46 +1325,42 @@ def _render_export_video_legacy_opencv(
         (int(options.width), int(options.height)),
     )
     if not writer.isOpened():
-        session.close()
+        frames.close()
         shutil.rmtree(temp_root, ignore_errors=True)
         raise RuntimeError("Could not open the MP4 writer for export.")
 
     try:
         if progress_callback is not None:
             progress_callback(0.0, "Encoding with legacy OpenCV MP4 writer…")
-        for frame_idx in range(total_frames):
-            current_time = min(clip_end, clip_start + frame_idx / float(max(1, int(options.fps))))
-            frame_rgba = session.render_frame(current_time=current_time)
+        for frame_idx, frame_rgba in enumerate(frames):
             frame_rgb = np.asarray(frame_rgba[:, :, :3], dtype=np.uint8)
             writer.write(cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR))
 
             if progress_callback is not None and (frame_idx == 0 or frame_idx == total_frames - 1 or frame_idx % max(1, int(options.fps) // 2) == 0):
                 progress = frame_idx / max(1, total_frames - 1)
                 progress_callback(progress, f"Rendering frame {frame_idx + 1} / {total_frames}")
+    except BaseException:
+        shutil.rmtree(temp_root, ignore_errors=True)
+        raise
     finally:
         writer.release()
-        session.close()
+        frames.close()
 
-    if Path(output_path).exists():
-        try:
-            Path(output_path).unlink()
-        except Exception:
-            pass
-
-    muxed = False
-    if Path(analysis.audio_path).exists():
-        muxed = _mux_audio_if_possible(
-            silent_video,
-            analysis.audio_path,
-            output_path,
-            start_time=clip_start,
-            duration=clip_duration if clip_duration > 1e-6 else None,
-        )
-
-    if not muxed:
-        Path(silent_video).replace(output_path)
-
-    shutil.rmtree(temp_root, ignore_errors=True)
+    try:
+        # Mux to a .mp4 staging file; FFmpeg cannot infer the format from .partial.
+        muxed_video = str(temp_root / "muxed_render.mp4")
+        muxed = False
+        if Path(analysis.audio_path).exists():
+            muxed = _mux_audio_if_possible(
+                silent_video, analysis.audio_path, muxed_video,
+                start_time=clip_start,
+                duration=clip_duration if clip_duration > 1e-6 else None,
+            )
+        completed = muxed_video if muxed else silent_video
+        with atomic_export_destination(output_path) as partial_path:
+            Path(completed).replace(partial_path)
+    finally:
+        shutil.rmtree(temp_root, ignore_errors=True)
     if progress_callback is not None:
         if clip_duration > 1e-6:
             progress_callback(1.0, f"Export finished (legacy, {clip_start:0.02f}s → {clip_end:0.02f}s): {output_path}")
