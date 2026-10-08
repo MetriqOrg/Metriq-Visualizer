@@ -1,0 +1,30 @@
+{
+  "tag": "baseline-v1.10.18",
+  "commit": "c3dfc9086a8383e2f5adcd0d00192d07b926721e",
+  "core_sha256": "d62b69f136b2f4f0ca805de6ffee8b0f621d18134ef1e37d8dabcfad2119d95c",
+  "numpy": "2.4.6",
+  "scipy": "1.17.1",
+  "librosa": "0.11.0",
+  "settings": {
+    "sample_rate": 22050,
+    "n_fft": 2048,
+    "hop_length": 256
+  },
+  "additional_profiles": {
+    "native_large": {
+      "sample_rate": 44100,
+      "n_fft": 4096,
+      "hop_length": 512
+    },
+    "odd_fft": {
+      "sample_rate": 22050,
+      "n_fft": 2049,
+      "hop_length": 257
+    }
+  },
+  "fixture_sha256": {
+    "tones_noise": "764b1e20e323a6280ad8f198e5c75707fe690bdaeddb246fd0ef935f9f1863cd",
+    "speech_like": "c640febce4331648c45bf9584b170949ed5ab850ec6c9c22b339ee5631b5e958",
+    "silence": "d1478b62f6cde68fe22fab1558867e81a0c64d148ad6d8850dd0da7eae45ece1"
+  }
+}

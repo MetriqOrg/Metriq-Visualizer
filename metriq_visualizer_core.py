@@ -15,7 +15,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable
 
-import librosa
 import numpy as np
 
 
@@ -719,33 +718,70 @@ def analyze_media(
     n_fft: int = 2048,
     hop_length: int = 256,
     temp_dir: str | Path | None = None,
+    *,
+    use_cache: bool = True,
+    cache_root: Path | None = None,
 ) -> AnalysisResult:
-    """Extract a dense audio feature set from an audio or video file."""
-    audio_path = ensure_wav_audio(source_path, sample_rate=sample_rate, temp_dir=temp_dir)
-    y, sr = librosa.load(audio_path, sr=sample_rate, mono=True)
+    """Extract legacy-compatible features, reusing the brief 03 analysis cache.
+
+    ``temp_dir`` only controls scratch audio placement; it does not affect DSP.
+    Disable caching explicitly for profiling or baseline comparisons.
+    """
+    from metriq_visualizer_cache import AnalysisSettings, analyze_source_cached
+
+    return analyze_source_cached(
+        source_path, use_cache=use_cache,
+        settings=AnalysisSettings(sample_rate, n_fft, hop_length),
+        cache_root=cache_root, temp_dir=temp_dir,
+    )
+
+
+def _analyze_media_uncached(
+    source_path: str | Path,
+    sample_rate: int = 22050,
+    n_fft: int = 2048,
+    hop_length: int = 256,
+    temp_dir: str | Path | None = None,
+) -> AnalysisResult:
+    from metriq_visualizer_audio import (
+        amplitude_to_db, cepstrum_and_onset, chroma_stft, magnitude_stft,
+        spectral_contrast, spectral_features, spectral_flux, yin, zero_crossing_rate,
+    )
+    import soundfile as sf
+
+    # Avoid launching FFmpeg when reading an already identical mono PCM16 WAV.
+    # All other inputs retain legacy FFmpeg resampling/downmixing/quantization.
+    try:
+        info = sf.info(str(source_path))
+        direct = (info.format == "WAV" and info.subtype == "PCM_16"
+                  and info.channels == 1 and info.samplerate == sample_rate)
+    except (OSError, RuntimeError):
+        direct = False
+    audio_path = str(source_path) if direct else ensure_wav_audio(source_path, sample_rate=sample_rate, temp_dir=temp_dir)
+    try:
+        y, sr = sf.read(audio_path, dtype="float32", always_2d=False)
+    except (OSError, RuntimeError):
+        y, sr = None, None
+    if y is None or sr != sample_rate or y.ndim != 1:
+        # Preserve the old decoder fallback when FFmpeg is unavailable.
+        import librosa
+        y, sr = librosa.load(audio_path, sr=sample_rate, mono=True)
     if y.size == 0:
         raise ValueError("The selected file did not contain a readable audio stream.")
 
     duration = float(len(y) / sr)
-    stft = librosa.stft(y=y, n_fft=n_fft, hop_length=hop_length)
-    magnitude = np.abs(stft)
-    spectrogram_db = librosa.amplitude_to_db(magnitude + 1e-12, ref=np.max)
-    spectrogram_freqs_hz = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
+    magnitude = magnitude_stft(y, n_fft, hop_length)
+    spectrogram_db = amplitude_to_db(magnitude)
+    spectrogram_freqs_hz = np.fft.rfftfreq(n_fft, 1.0 / sr)
 
-    rms = librosa.feature.rms(S=magnitude, frame_length=n_fft)[0]
-    zcr = librosa.feature.zero_crossing_rate(y, frame_length=n_fft, hop_length=hop_length)[0]
-    centroid = librosa.feature.spectral_centroid(S=magnitude, sr=sr)[0]
-    bandwidth = librosa.feature.spectral_bandwidth(S=magnitude, sr=sr)[0]
-    rolloff = librosa.feature.spectral_rolloff(S=magnitude, sr=sr)[0]
-    flatness = librosa.feature.spectral_flatness(S=magnitude)[0]
-    contrast = librosa.feature.spectral_contrast(S=magnitude, sr=sr)
-    chroma = librosa.feature.chroma_stft(S=magnitude, sr=sr)
-    mfcc = librosa.feature.mfcc(S=librosa.power_to_db(magnitude**2 + 1e-12), sr=sr, n_mfcc=13)
-    onset_strength = librosa.onset.onset_strength(S=librosa.power_to_db(magnitude**2 + 1e-12), sr=sr)
+    rms, centroid, bandwidth, rolloff, flatness = spectral_features(magnitude, sr, n_fft)
+    zcr = zero_crossing_rate(y, n_fft, hop_length)
+    contrast = spectral_contrast(magnitude, sr)
+    chroma = chroma_stft(magnitude, sr)
+    mfcc, onset_strength = cepstrum_and_onset(magnitude)
 
     # Spectral flux: frame-to-frame change in a column-normalized magnitude spectrum.
-    mag_norm = magnitude / np.maximum(np.linalg.norm(magnitude, axis=0, keepdims=True), 1e-12)
-    flux = np.sqrt(np.sum(np.diff(mag_norm, axis=1, prepend=mag_norm[:, :1]) ** 2, axis=0))
+    flux = spectral_flux(magnitude)
 
     dominant_bins = np.argmax(magnitude, axis=0)
     dominant_freq_hz = spectrogram_freqs_hz[dominant_bins]
@@ -757,15 +793,7 @@ def analyze_media(
 
     # Fundamental frequency estimate. Keep it permissive enough for broad audio content.
     try:
-        fmax = float(min(sr / 2 - 50, 12000))
-        f0_hz = librosa.yin(
-            y,
-            fmin=50,
-            fmax=max(200.0, fmax),
-            sr=sr,
-            frame_length=n_fft,
-            hop_length=hop_length,
-        )
+        f0_hz = yin(y, sr, n_fft, hop_length)
     except Exception:  # noqa: BLE001
         f0_hz = np.zeros_like(rms)
 
@@ -820,7 +848,7 @@ def analyze_media(
     contrast_mean = cut(contrast_mean)
     f0_hz = cut(f0_hz)
 
-    times = librosa.frames_to_time(np.arange(n_frames), sr=sr, hop_length=hop_length)
+    times = np.arange(n_frames) * hop_length / float(sr)
 
     features: dict[str, np.ndarray] = {
         "time": times,
