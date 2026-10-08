@@ -21,6 +21,13 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
 
+if len(sys.argv) == 3 and sys.argv[1] == "--metriq-install-helper":
+    # The installed app runs its own trusted helper without loading the UI or
+    # anything from the downloaded bundle.
+    sys.dont_write_bytecode = True
+    from metriq_visualizer_updates import helper_main
+    raise SystemExit(helper_main(Path(sys.argv[2])))
+
 # A signed macOS app bundle must not gain __pycache__ files after launch, or the signature breaks.
 sys.dont_write_bytecode = True
 
@@ -118,6 +125,7 @@ from metriq_visualizer_cinematics import (
 )
 from metriq_visualizer_export_queue import ExportQueueJob, deserialize_queue, serialize_queue
 from metriq_visualizer_export_engine import EXPORT_ENGINE_AUTO_LABEL, EXPORT_ENGINE_CHOICES, EXPORT_QUALITY_BALANCED_LABEL, EXPORT_QUALITY_CHOICES
+from metriq_visualizer_update_ui import UpdateController
 from metriq_visualizer_visuals import (
     EMPTY_FLOAT,
     EMPTY_RGBA,
@@ -2401,6 +2409,7 @@ class MainWindow(QMainWindow):
         self.frame_timer.timeout.connect(self._on_frame_tick)
 
         self._build_ui()
+        self.update_controller = UpdateController(self, APP_VERSION)
         self._apply_window_branding()
         self._apply_theme_mode(DEFAULT_THEME_KEY, announce=False)
         self._update_brand_identity_layout()
@@ -6575,6 +6584,9 @@ class MainWindow(QMainWindow):
 
     # ---------- Qt ----------
     def closeEvent(self, event):  # noqa: N802
+        if not self.update_controller.can_close():
+            event.ignore()
+            return
         self._closing = True
         self.frame_timer.stop()
         self._ui_heartbeat_timer.stop()

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import platform
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -17,6 +18,23 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "metriq_visualizer_app.py"
 NAME = "Metriq Visualizer"
+BUNDLE_IDENTIFIER = "org.metriq.visualizer"
+
+
+def patch_macos_bundle_metadata(app_path: Path, version: str) -> None:
+    plist_path = app_path / "Contents" / "Info.plist"
+    with plist_path.open("rb") as handle:
+        payload = plistlib.load(handle)
+    payload.update(CFBundleIdentifier=BUNDLE_IDENTIFIER, CFBundleShortVersionString=version, CFBundleVersion=version)
+    with plist_path.open("wb") as handle:
+        plistlib.dump(payload, handle)
+
+
+def sign_macos_bundle(app_path: Path, *, runner=subprocess.run) -> None:
+    result = runner(["/usr/bin/codesign", "--force", "--deep", "--sign", "-", str(app_path)],
+                    capture_output=True, text=True, check=False)
+    if result.returncode:
+        raise RuntimeError(f"Could not sign app: {result.stderr}")
 
 
 def data_arg(source: str, target: str) -> str:
@@ -56,10 +74,17 @@ def main() -> int:
         str(APP),
     ]
 
+    if platform.system() == "Darwin":
+        cmd[1:1] = ["--osx-bundle-identifier", BUNDLE_IDENTIFIER]
     env = os.environ.copy()
     env.setdefault("PYTHONUTF8", "1")
     print("Running:", " ".join(cmd))
-    return subprocess.call(cmd, cwd=ROOT, env=env)
+    result = subprocess.call(cmd, cwd=ROOT, env=env)
+    if result == 0 and platform.system() == "Darwin":
+        app_path = ROOT / "dist" / f"{NAME}.app"
+        patch_macos_bundle_metadata(app_path, (ROOT / "VERSION.txt").read_text().strip())
+        sign_macos_bundle(app_path)
+    return result
 
 
 if __name__ == "__main__":
