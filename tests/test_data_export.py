@@ -25,3 +25,20 @@ def test_csv_npz_and_cli_export_mapped_data(tmp_path: Path, capsys) -> None:
         assert meta["mapping_formulas"]["x"] == "a"
     assert main([str(source), str(tmp_path / "cli.csv"), "--x", "a", "--y", "b", "--z", "pc1", "--size", "a"]) == 0
     assert str(tmp_path / "cli.csv") in capsys.readouterr().out
+
+
+def test_export_replaces_existing_destination_atomically(tmp_path: Path) -> None:
+    source = tmp_path / "source.csv"
+    source.write_text("time,a\n0,1\n1,2\n", encoding="utf-8")
+    analysis = analysis_from_table_file(source)
+    destination = tmp_path / "mapped.csv"
+    destination.write_text("old contents\n", encoding="utf-8")
+
+    result = export_analysis_csv(destination, analysis)
+
+    assert result == destination.resolve()
+    with destination.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.reader(handle))
+    assert rows[0][:2] == ["time_seconds", "source_frame"]
+    assert len(rows) == analysis.times.size + 1
+    assert not list(tmp_path.glob("*.tmp"))
