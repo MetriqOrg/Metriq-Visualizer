@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
+from metriq_visualizer_atomic import atomic_destination
+
 
 EXPORT_ENGINE_AUTO_LABEL = "Auto (GPU encoder → CPU)"
 EXPORT_ENGINE_GPU_LABEL = "GPU encoder only"
@@ -33,6 +35,11 @@ EXPORT_QUALITY_CHOICES = (
     EXPORT_QUALITY_BALANCED_LABEL,
     EXPORT_QUALITY_QUALITY_LABEL,
 )
+
+
+def atomic_export_destination(output_path: str | Path):
+    """Return a context manager for an encoder's same-directory temporary output."""
+    return atomic_destination(output_path, suffix=".partial")
 
 
 @dataclass(frozen=True)
