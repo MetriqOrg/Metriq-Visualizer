@@ -39,6 +39,7 @@ from metriq_visualizer_visuals import (
 )
 
 from metriq_visualizer_export_engine import (
+    atomic_export_destination,
     EXPORT_ENGINE_AUTO_LABEL,
     EXPORT_QUALITY_BALANCED_LABEL,
     build_ffmpeg_rawvideo_command,
@@ -1111,12 +1112,8 @@ def _render_export_video_ffmpeg(
         if not Path(encoded_video).exists() or Path(encoded_video).stat().st_size <= 0:
             raise RuntimeError(f"FFmpeg did not create an output file with {encoder.label}.")
 
-        if Path(output_path).exists():
-            try:
-                Path(output_path).unlink()
-            except Exception:
-                pass
-        Path(encoded_video).replace(output_path)
+        with atomic_export_destination(output_path) as partial_path:
+            Path(encoded_video).replace(partial_path)
         if progress_callback is not None:
             if clip_duration > 1e-6:
                 progress_callback(1.0, f"Export finished with {encoder.label} ({clip_start:0.02f}s → {clip_end:0.02f}s): {output_path}")
