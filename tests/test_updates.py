@@ -5,6 +5,7 @@ import plistlib
 import stat
 import subprocess
 import zipfile
+from email.message import Message
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,6 +15,7 @@ import pytest
 import metriq_visualizer_updates as updates
 
 API_ASSET = "https://api.github.com/repos/MetriqOrg/Metriq-Visualizer/releases/assets/42"
+_REAL_OPENER_OPEN = updates.urllib.request.OpenerDirector.open
 
 
 @pytest.fixture(autouse=True)
@@ -79,6 +81,112 @@ def app_zip(root, *, version="1.14.0", identifier=updates.APP_BUNDLE_IDENTIFIER,
     update = updates.UpdateInfo("1.14.0", "Metriq-Visualizer-macOS-arm64.zip", API_ASSET,
         hashlib.sha256(raw).hexdigest(), len(raw), "")
     return archive, update
+
+
+@pytest.fixture
+def redirect_transport(monkeypatch):
+    """Run urllib's real redirect dispatch, replacing only HTTP transport."""
+    def configure(targets, payload):
+        requests = []
+        def respond(handler, request):
+            requests.append(request)
+            headers = Message()
+            index = len(requests) - 1
+            status = 302 if index < len(targets) else 200
+            if status == 302:
+                headers["Location"] = targets[index]
+            response = updates.urllib.request.addinfourl(
+                io.BytesIO(b"" if status == 302 else payload), headers, request.full_url, status)
+            response.msg = "Found" if status == 302 else "OK"
+            return response
+        monkeypatch.setattr(updates.urllib.request.OpenerDirector, "open", _REAL_OPENER_OPEN)
+        monkeypatch.setattr(updates.urllib.request.HTTPSHandler, "https_open", respond)
+        monkeypatch.setattr(updates.urllib.request.HTTPHandler, "http_open",
+                            lambda *a: pytest.fail("Unsafe HTTP transport reached"))
+        return requests
+    return configure
+
+
+# Rejecting legitimate storage redirects makes every real GitHub update fail.
+@pytest.mark.parametrize("targets", [
+    ["https://objects.githubusercontent.com/file?token=signed"],
+    ["https://github.com/MetriqOrg/Metriq-Visualizer/releases/download/v1.14.0/app.zip",
+     "https://api.github.com/redirect", "https://release-assets.githubusercontent.com/file"],
+    ["https://github-releases.githubusercontent.com/file"],
+    ["https://objects.githubusercontent.com:443/file"],
+])
+def test_allowed_download_redirect_chain(tmp_path, redirect_transport, targets):
+    archive, update = app_zip(tmp_path)
+    requests = redirect_transport(targets, archive.read_bytes())
+    destination = tmp_path / "download.zip"
+    assert updates.download_verified_asset(update, destination).read_bytes() == archive.read_bytes()
+    assert [request.full_url for request in requests] == [API_ASSET, *targets]
+
+
+# Each forbidden target must fail before a second transport call.
+@pytest.mark.parametrize("target", [
+    "http://objects.githubusercontent.com/file", "https://evil.test/file",
+    "https://objects.githubusercontent.com.evil.test/file", "https://127.0.0.1/file",
+    "https://[::1]/file", "https://objects.githubusercontent.com:444/file",
+    "https://user:secret@objects.githubusercontent.com/file",
+    "https://user@objects.githubusercontent.com/file",
+])
+def test_unsafe_download_redirect_is_refused(tmp_path, redirect_transport, target):
+    archive, update = app_zip(tmp_path)
+    requests = redirect_transport([target], archive.read_bytes())
+    with pytest.raises(ValueError):
+        updates.download_verified_asset(update, tmp_path / "download.zip")
+    assert len(requests) == 1
+    assert not (tmp_path / "download.zip").exists()
+    assert not list(tmp_path.glob(".download-*.part"))
+
+
+@pytest.mark.parametrize("targets", [
+    [f"https://objects.githubusercontent.com/file{i}" for i in range(4)],
+    ["https://objects.githubusercontent.com/file"] * 4,
+])
+def test_download_redirect_hop_limit(tmp_path, redirect_transport, targets):
+    archive, update = app_zip(tmp_path)
+    requests = redirect_transport(targets, archive.read_bytes())
+    with pytest.raises(ValueError, match="redirect"):
+        updates.download_verified_asset(update, tmp_path / "download.zip")
+    assert len(requests) == 4  # Initial request plus three permitted hops.
+
+
+def test_download_redirect_never_forwards_credentials(redirect_transport):
+    targets = [API_ASSET, "https://release-assets.githubusercontent.com/file"]
+    requests = redirect_transport(targets, b"verified bytes")
+    request = updates._request(API_ASSET, "application/octet-stream")
+    request.add_header("Authorization", "Bearer secret")
+    request.add_header("Cookie", "session=secret")
+    request.add_header("Proxy-Authorization", "Basic secret")
+    request.add_unredirected_header("X-Private-Credential", "secret")
+    with updates._urlopen(request, timeout=30) as response:
+        assert response.read() == b"verified bytes"
+    assert len(requests) == 3
+    for redirected in requests[1:]:
+        assert {key.lower() for key, value in redirected.header_items()} == {
+            "accept", "user-agent", "x-github-api-version", "host"}
+        assert all("secret" not in value for key, value in redirected.header_items())
+
+
+def test_digest_mismatch_after_redirect_preserves_destination(tmp_path, redirect_transport):
+    archive, update = app_zip(tmp_path)
+    requests = redirect_transport(["https://objects.githubusercontent.com/file"], b"x" * update.size)
+    destination = tmp_path / "download.zip"
+    destination.write_bytes(b"existing")
+    with pytest.raises(ValueError, match="SHA-256"):
+        updates.download_verified_asset(update, destination)
+    assert len(requests) == 2
+    assert destination.read_bytes() == b"existing"
+    assert not list(tmp_path.glob(".download-*.part"))
+
+
+def test_metadata_redirect_remains_refused(redirect_transport):
+    requests = redirect_transport(["https://api.github.com/other"], b"[]")
+    with pytest.raises(ValueError, match="redirect"):
+        updates.fetch_releases()
+    assert len(requests) == 1
 
 
 def test_digest_mismatch_preserves_destination(tmp_path):
