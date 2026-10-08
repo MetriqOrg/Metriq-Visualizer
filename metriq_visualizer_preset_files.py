@@ -5,6 +5,9 @@
 from __future__ import annotations
 
 import json
+import os
+from collections.abc import Iterable, Mapping
+from copy import deepcopy
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -47,13 +50,57 @@ def save_preset(path: str | Path, payload: dict[str, Any]) -> Path:
 
 def load_preset(path: str | Path) -> dict[str, Any]:
     path = Path(path).expanduser()
-    with path.open("r", encoding="utf-8") as handle:
+    with path.open("r", encoding="utf-8-sig") as handle:
         payload = json.load(handle)
     if not isinstance(payload, dict):
         raise ValueError("Preset file is not a JSON object.")
-    state = payload.get("state") or {}
+    file_format = payload.get("format")
+    if file_format not in (None, PRESET_FORMAT):
+        raise ValueError("This JSON file is not a Metriq Visualizer preset.")
+    try:
+        version = int(payload.get("preset_schema_version", PRESET_SCHEMA_VERSION) or PRESET_SCHEMA_VERSION)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Preset schema version is invalid.") from exc
+    if version > PRESET_SCHEMA_VERSION:
+        raise ValueError(f"Preset schema {version} is newer than this application supports.")
+    state = payload.get("state")
+    if state is None:
+        metadata = {"app", "app_version", "created_at", "format", "preset_name", "preset_schema_version", "saved_at_utc"}
+        state = {key: value for key, value in payload.items() if key not in metadata}
     if not isinstance(state, dict):
         raise ValueError("Preset state is missing or invalid.")
+    # Deep-copy without translating or dropping creator-authored sections.
+    payload = deepcopy(payload)
     payload["preset_path"] = str(path.resolve())
-    payload["state"] = dict(state)
+    payload["state"] = deepcopy(state)
     return payload
+
+
+def default_preset_directories() -> tuple[Path, ...]:
+    directories = [Path(item).expanduser() for item in os.environ.get("METRIQ_PRESET_PATH", "").split(os.pathsep) if item.strip()]
+    directories.extend((Path.home() / ".metriq_visualizer" / "presets", Path(__file__).resolve().parent / "presets"))
+    return tuple(directories)
+
+
+def preset_display_name(payload: Mapping[str, Any], fallback: str = "Preset") -> str:
+    for key in ("preset_name", "name"):
+        value = str(payload.get(key, "")).strip()
+        if value:
+            return value.replace("_", " ")
+    return str(fallback or "Preset").replace("_", " ")
+
+
+def discover_presets(directories: Iterable[str | Path] | None = None) -> dict[str, Path]:
+    """Discover readable presets; earlier (user) directories win name collisions."""
+    found: dict[str, Path] = {}
+    for value in directories if directories is not None else default_preset_directories():
+        directory = Path(value).expanduser()
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.glob(f"*{PRESET_EXTENSION}"), key=lambda item: item.name.casefold()):
+            try:
+                payload = load_preset(path)
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                continue
+            found.setdefault(preset_display_name(payload, path.stem), path.resolve())
+    return found
