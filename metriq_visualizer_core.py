@@ -467,6 +467,23 @@ def analysis_from_table_file(path: str | Path) -> AnalysisResult:
     )
 
 
+def _decode_with_soundfile(path: str, sample_rate: int) -> tuple[np.ndarray, int]:
+    """Fallback decoder without FFmpeg: libsndfile read, mono downmix, scipy polyphase resample."""
+    import soundfile as sf
+    from math import gcd
+    from scipy.signal import resample_poly
+
+    try:
+        data, rate = sf.read(path, dtype="float32", always_2d=True)
+    except (OSError, RuntimeError) as exc:
+        raise ValueError("This audio file could not be decoded. Install FFmpeg to read this format.") from exc
+    y = data.mean(axis=1)
+    if int(rate) != int(sample_rate):
+        divisor = gcd(int(rate), int(sample_rate))
+        y = resample_poly(y, int(sample_rate) // divisor, int(rate) // divisor).astype(np.float32)
+    return y, int(sample_rate)
+
+
 def ensure_wav_audio(
     source_path: str | Path,
     sample_rate: int = 22050,
@@ -763,9 +780,8 @@ def _analyze_media_uncached(
     except (OSError, RuntimeError):
         y, sr = None, None
     if y is None or sr != sample_rate or y.ndim != 1:
-        # Preserve the old decoder fallback when FFmpeg is unavailable.
-        import librosa
-        y, sr = librosa.load(audio_path, sr=sample_rate, mono=True)
+        # FFmpeg was unavailable or did not give mono audio at the analysis rate.
+        y, sr = _decode_with_soundfile(audio_path, sample_rate)
     if y.size == 0:
         raise ValueError("The selected file did not contain a readable audio stream.")
 

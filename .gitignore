@@ -13,3 +13,6 @@ __pycache__/
 dist/
 build/Metriq Visualizer/
 *.spec
+
+# Reference audio decoded once by the v1.10.18 code (see tests/generate_decoded_fixtures.py)
+!tests/goldens/**/*.wav

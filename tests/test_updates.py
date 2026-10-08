@@ -4,6 +4,7 @@ import io
 import plistlib
 import stat
 import subprocess
+import sys
 import zipfile
 from email.message import Message
 from dataclasses import replace
@@ -363,6 +364,7 @@ def install_setup(tmp_path, monkeypatch):
     return target, bundle
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="exercises the macOS .app bundle exchange")
 def test_helper_waits_for_exit_and_keeps_rollback_copy(install_setup, tmp_path, monkeypatch):
     import concurrent.futures
     import threading
@@ -429,6 +431,7 @@ def test_launcher_failure_and_changed_installed_version_leave_app_untouched(inst
     assert (target / "old").read_text() == "old app"
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="exercises the macOS .app bundle exchange")
 def test_abrupt_helper_exit_after_atomic_exchange_keeps_both_apps(install_setup):
     import sys
     target, bundle = install_setup
@@ -452,6 +455,7 @@ def test_case_insensitive_symlink_ancestor_is_refused_in_preflight(tmp_path):
     assert not (tmp_path / "stage").exists()
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="exercises the macOS .app bundle exchange")
 def test_prepare_verifies_entire_pipeline_before_scheduling(tmp_path, monkeypatch):
     archive, update = app_zip(tmp_path)
     target = installed(tmp_path)
@@ -472,6 +476,7 @@ def test_prepare_verifies_entire_pipeline_before_scheduling(tmp_path, monkeypatc
     assert str(manifest.parent / target.name) not in launches[0][0][0]
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="exercises the macOS .app bundle exchange")
 def test_bad_download_cannot_schedule_or_change_installed_app(tmp_path, monkeypatch):
     _, update = app_zip(tmp_path)
     target = installed(tmp_path)
