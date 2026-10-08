@@ -37,6 +37,18 @@ def assert_matches(actual, expected, *, err_msg=""):
     np.testing.assert_allclose(actual, expected, rtol=0, atol=max(CROSS_PLATFORM_RANGE_FRACTION * spread, 1e-4), err_msg=err_msg)
 
 
+def decoded_22050(name):
+    """The 22.05 kHz audio the v1.10.18 code produced from the fixture (via FFmpeg, once).
+
+    Using it makes these tests compare our DSP against the saved results on identical samples
+    everywhere, independent of the installed FFmpeg's resampler version.
+    """
+    manifest = json.loads((GOLDENS / "manifest.json").read_text())
+    path = GOLDENS / f"decoded_{name}_22050.wav"
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == manifest["decoded_22050_sha256"][name]
+    return path
+
+
 @pytest.fixture(params=FIXTURE_NAMES)
 def analysis_pair(request, tmp_path):
     name = request.param
@@ -45,7 +57,7 @@ def analysis_pair(request, tmp_path):
     manifest = json.loads((GOLDENS / "manifest.json").read_text())
     assert manifest["tag"] == "baseline-v1.10.18"
     assert hashlib.sha256(wav.read_bytes()).hexdigest() == manifest["fixture_sha256"][name]
-    actual = analyze_media(wav, temp_dir=tmp_path / "decode", use_cache=False)
+    actual = analyze_media(decoded_22050(name), temp_dir=tmp_path / "decode", use_cache=False)
     with np.load(GOLDENS / f"{name}.npz", allow_pickle=False) as archive:
         expected = {key: archive[key] for key in archive.files}
     return actual, expected
@@ -76,8 +88,11 @@ def test_every_legacy_feature_and_panel_matches_baseline(analysis_pair):
 def test_configurable_settings_match_baseline_goldens(name, profile, tmp_path):
     manifest = json.loads((GOLDENS / "manifest.json").read_text())
     settings = manifest["additional_profiles"][profile]
-    wav = tmp_path / f"{name}.wav"
-    write_fixture(wav, name)
+    if settings["sample_rate"] == 22050:
+        wav = decoded_22050(name)
+    else:  # native rate: FFmpeg only copies the 44.1 kHz fixture, so no resampler is involved
+        wav = tmp_path / f"{name}.wav"
+        write_fixture(wav, name)
     actual = analyze_media(wav, **settings, temp_dir=tmp_path / "decode", use_cache=False)
     with np.load(GOLDENS / f"{name}_{profile}.npz", allow_pickle=False) as expected:
         assert set(expected.files) <= actual.features.keys()

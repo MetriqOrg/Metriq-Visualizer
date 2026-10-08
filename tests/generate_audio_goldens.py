@@ -1,4 +1,5 @@
-"""Regenerate with: python tests/generate_audio_goldens.py (requires FFmpeg)."""
+"""Regenerate with: python tests/generate_audio_goldens.py (requires FFmpeg and `pip install librosa`,
+because it runs the original v1.10.18 code, which used librosa)."""
 
 import hashlib
 import importlib.util

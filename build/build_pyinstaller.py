@@ -69,8 +69,6 @@ def main() -> int:
         "scipy.spatial.transform._rotation_groups",
         "--collect-submodules",
         "pyqtgraph",
-        "--collect-submodules",
-        "librosa",
         str(APP),
     ]
 
