@@ -29,6 +29,11 @@ Metriq builds technology intended to support real-world progress. The visual lan
   - 1920×1080 landscape
   - 1080×1920 vertical
 - Export engine selector with Auto GPU encoder → CPU fallback, CPU FFmpeg, and legacy OpenCV modes
+- Fast, cached audio analysis (about 6x faster than v1.10.18 with identical results)
+- Safe saves and exports: files are written to a temporary file and moved into place only on success
+- Stage Output (View menu): mirror the live viewport and panels to a second display for performances
+- Export mapped data as CSV or NPZ (File menu)
+- Verified updates (Help menu): checks GitHub releases, verifies a SHA-256 checksum, and installs only after you confirm
 
 ## Input notes
 Open a media file to extract a feature set and build geometry.
