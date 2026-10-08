@@ -14,6 +14,13 @@ interface and brings in the best engine upgrades from the 1.12 line.
 - **Data export.** Mapped analysis data can be exported as CSV or NPZ (`python -m metriq_visualizer_data_export`).
 - **Sturdier presets.** Legacy and BOM-prefixed preset files load reliably; your own presets are
   preferred over bundled ones with the same name.
+- **Stage output (View > Stage Output).** A second window for an audience display that mirrors the
+  live viewport, an analysis panel and the logo. Pick the display, go fullscreen, choose layers and a
+  background. The main window is unchanged when it is closed.
+- **Verified updates (Help > Check for Updates).** Checks Metriq's GitHub releases, verifies a SHA-256
+  checksum, and installs only after you confirm, keeping the old app as a rollback copy. A quiet daily
+  check can be turned off.
+- **Exports are about 15-20% faster** with output identical to v1.10.18, bit for bit.
 - **Signed macOS builds stay valid.** The app no longer writes Python bytecode inside its bundle.
 
 ## v1.10.18
