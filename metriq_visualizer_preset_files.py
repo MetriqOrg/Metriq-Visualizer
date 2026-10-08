@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from metriq_visualizer_atomic import atomic_write_text
+
 PRESET_SCHEMA_VERSION = 1
 PRESET_FORMAT = "mvpreset"
 PRESET_EXTENSION = ".mvpreset"
@@ -31,7 +33,6 @@ def save_preset(path: str | Path, payload: dict[str, Any]) -> Path:
     path = Path(path).expanduser()
     if path.suffix.lower() != PRESET_EXTENSION:
         path = path.with_suffix(PRESET_EXTENSION)
-    path.parent.mkdir(parents=True, exist_ok=True)
 
     if path.exists():
         backup_path = path.with_suffix(path.suffix + BACKUP_SUFFIX)
@@ -40,10 +41,7 @@ def save_preset(path: str | Path, payload: dict[str, Any]) -> Path:
         except Exception:
             pass
 
-    tmp_path = path.with_suffix(path.suffix + ".tmp")
-    with tmp_path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=2, sort_keys=True)
-    tmp_path.replace(path)
+    atomic_write_text(path, json.dumps(payload, indent=2, sort_keys=True))
     return path
 
 
