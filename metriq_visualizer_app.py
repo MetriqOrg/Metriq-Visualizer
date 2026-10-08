@@ -113,6 +113,7 @@ from metriq_visualizer_cinematics import (
     serialize_regions,
 )
 from metriq_visualizer_export_queue import ExportQueueJob, deserialize_queue, serialize_queue
+from metriq_visualizer_stage_output import StageOutputConfig, StageOutputSettingsDialog, StageOutputWindow
 from metriq_visualizer_export_engine import EXPORT_ENGINE_AUTO_LABEL, EXPORT_ENGINE_CHOICES, EXPORT_QUALITY_BALANCED_LABEL, EXPORT_QUALITY_CHOICES
 from metriq_visualizer_visuals import (
     EMPTY_FLOAT,
@@ -2291,6 +2292,8 @@ class MainWindow(QMainWindow):
         self._rgba_full: np.ndarray | None = None
         self._last_head_idx: int = 0
         self.export_layout_spec = default_export_layout()
+        self.stage_output_config = StageOutputConfig()
+        self.stage_output_window: StageOutputWindow | None = None
         self.profile_store = ProfileStore()
         self._freeze_watchdog = SilentFreezeWatchdog(self.profile_store)
         self._recent_files: list[str] = self.profile_store.load_recent_files()
@@ -2540,6 +2543,39 @@ class MainWindow(QMainWindow):
         quit_action = QAction("Quit", self)
         quit_action.triggered.connect(self.close)
         self.file_menu.addAction(quit_action)
+
+        view_menu = self.menuBar().addMenu("&View")
+        stage_output_action = QAction("Stage Output…", self)
+        stage_output_action.triggered.connect(self.open_stage_output_settings)
+        view_menu.addAction(stage_output_action)
+
+    def _stage_output_layers(self):
+        """Capture lightweight snapshots of widgets already rendered by the studio."""
+        layers = {}
+        for key, widget in (("viewport", self.geometry_view), ("analysis", self.analysis_tabs.tabs.currentWidget()), ("logo", self.brand_logo_label)):
+            if widget is not None and widget.isVisible():
+                try:
+                    layers[key] = widget.grab()
+                except RuntimeError:
+                    pass
+        return layers
+
+    def open_stage_output_settings(self) -> None:
+        from PySide6.QtGui import QGuiApplication
+        dialog = StageOutputSettingsDialog(self.stage_output_config, QGuiApplication.screens(), self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self.stage_output_config = dialog.config()
+        self._mark_dirty(reason="stage_output_settings")
+        if self.stage_output_window is None:
+            self.stage_output_window = StageOutputWindow(self._stage_output_layers, self.stage_output_config)
+            self.stage_output_window.closed.connect(self._stage_output_closed)
+        else:
+            self.stage_output_window.set_config(self.stage_output_config)
+        self.stage_output_window.show_on_selected_screen()
+
+    def _stage_output_closed(self) -> None:
+        self.stage_output_window = None
 
     def _build_toolbar(self) -> QWidget:
 
@@ -4830,6 +4866,7 @@ class MainWindow(QMainWindow):
     def _collect_state(self, include_source: bool = False) -> dict:
         payload = {
             "schema_version": 84,
+            "stage_output": self.stage_output_config.to_dict(),
             "restore_last_session_enabled": (
                 bool(self.restore_last_session_checkbox.isChecked())
                 if hasattr(self, "restore_last_session_checkbox")
@@ -4984,6 +5021,9 @@ class MainWindow(QMainWindow):
         self._mark_dirty(reason="preset_loaded")
 
     def _apply_state(self, payload: dict, restore_file: bool = False) -> None:
+        self.stage_output_config = StageOutputConfig.from_dict(payload.get("stage_output"))
+        if self.stage_output_window is not None:
+            self.stage_output_window.set_config(self.stage_output_config)
         extraction = payload.get("extraction", {})
         mapping = payload.get("mapping", {})
         performance = payload.get("performance", {})
@@ -6572,6 +6612,9 @@ class MainWindow(QMainWindow):
     # ---------- Qt ----------
     def closeEvent(self, event):  # noqa: N802
         self._closing = True
+        if self.stage_output_window is not None:
+            self.stage_output_window.close()
+            self.stage_output_window = None
         self.frame_timer.stop()
         self._ui_heartbeat_timer.stop()
         self._diagnostics_timer.stop()
