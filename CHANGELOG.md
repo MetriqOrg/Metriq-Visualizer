@@ -20,7 +20,7 @@ interface and brings in the best engine upgrades from the 1.12 line.
 - **Verified updates (Help > Check for Updates).** Checks Metriq's GitHub releases, verifies a SHA-256
   checksum, and installs only after you confirm, keeping the old app as a rollback copy. A quiet daily
   check can be turned off.
-- **Exports are about 15-20% faster** with output identical to v1.10.18, bit for bit.
+- **Export output is unchanged**, bit for bit, with small internal speedups (within run-to-run noise on a typical Mac).
 - **Signed macOS builds stay valid.** The app no longer writes Python bytecode inside its bundle.
 
 ## v1.10.18
