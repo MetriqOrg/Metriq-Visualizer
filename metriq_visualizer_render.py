@@ -12,7 +12,7 @@ from concurrent.futures import ProcessPoolExecutor
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable, Iterator
 
@@ -114,11 +114,6 @@ class ExportOptions:
     video_bitrate_mbps: float = 0.0
     start_time: float = 0.0
     end_time: float | None = None
-    renderer: str = "auto"
-
-    def __post_init__(self) -> None:
-        if self.renderer not in {"auto", "cpu", "gpu"}:
-            raise ValueError(f"Unknown export renderer: {self.renderer!r}")
 
 
 APP_BG = (7, 11, 17)
@@ -738,15 +733,7 @@ class ExportPreviewSession:
         self.analysis = analysis
         self.geom = geom
         self.options = options
-        self.geometry_renderer = None
-        if options.renderer == "gpu" and options.layout.geometry.enabled:
-            try:
-                from metriq_visualizer_gpu_export import GPUExportRenderer
-                self.geometry_renderer = GPUExportRenderer(analysis, geom, options)
-            except Exception as exc:
-                logging.getLogger(__name__).warning("GPU renderer unavailable; falling back to CPU: %s", exc)
-        if self.geometry_renderer is None:
-            self.geometry_renderer = OffscreenGeometryRenderer(analysis, geom, options)
+        self.geometry_renderer = OffscreenGeometryRenderer(analysis, geom, options)
         panel_names = ("spectrogram", "chromagram", "mfcc", "traces")
         need_panels = bool(options.include_panels) and any(options.layout.item(name).enabled for name in panel_names)
         self.panel_renderer = AnalysisCardRenderer(analysis, geom, options) if need_panels else None
@@ -800,30 +787,10 @@ class ExportPreviewSession:
         self._last_frame = np.asarray(frame_rgba, dtype=np.uint8)
         return np.asarray(self._last_frame, dtype=np.uint8)
 
-    @property
-    def active_renderer(self) -> str:
-        return "cpu" if isinstance(self.geometry_renderer, OffscreenGeometryRenderer) else "gpu"
-
     def _render_geometry(self, current_time: float) -> np.ndarray:
-        try:
-            return self.geometry_renderer.render(current_time)
-        except Exception as exc:
-            if isinstance(self.geometry_renderer, OffscreenGeometryRenderer):
-                raise
-            logging.getLogger(__name__).warning("GPU renderer failed; falling back to CPU: %s", exc)
-            self._close_gpu_renderer()
-            self.geometry_renderer = OffscreenGeometryRenderer(self.analysis, self.geom, self.options)
-            return self.geometry_renderer.render(current_time)
-
-    def _close_gpu_renderer(self) -> None:
-        try:
-            self.geometry_renderer.close()
-        except Exception:
-            logging.getLogger(__name__).debug("GPU renderer cleanup failed", exc_info=True)
+        return self.geometry_renderer.render(current_time)
 
     def close(self) -> None:
-        if not isinstance(self.geometry_renderer, OffscreenGeometryRenderer):
-            self._close_gpu_renderer()
         if self.preview_reader is not None:
             self.preview_reader.close()
 
@@ -1111,7 +1078,7 @@ _CPU_WORKER_SESSION: ExportPreviewSession | None = None
 
 def _initialize_cpu_worker(analysis: AnalysisResult, geom: GeometryResult, options: ExportOptions) -> None:
     global _CPU_WORKER_SESSION
-    _CPU_WORKER_SESSION = ExportPreviewSession(analysis, geom, replace(options, renderer="cpu"))
+    _CPU_WORKER_SESSION = ExportPreviewSession(analysis, geom, options)
     import atexit
     atexit.register(_CPU_WORKER_SESSION.close)
 
@@ -1141,15 +1108,11 @@ def iter_export_frames(
     analysis: AnalysisResult, geom: GeometryResult, options: ExportOptions,
     times: Iterable[float], *, parallel: bool | None = None,
 ) -> Iterator[np.ndarray]:
-    """Yield ordered frames with at most two render processes and two queued frames.
+    """Yield ordered CPU rendered frames, serially by default.
 
-    Auto and CPU use the verified faster serial Agg path. Explicit parallel=True
-    uses two identical Agg workers; GPU owns one isolated context. Failed CPU workers resume serially
-    at the failed frame, without duplicating or skipping frames.
+    Explicit parallel=True uses two identical Agg workers. Failed workers resume
+    serially at the failed frame, without duplicating or skipping frames.
     """
-    # Serial optimized Agg won the completed short-clip benchmark medians at
-    # both resolutions. Do not infer an unmeasured parallel crossover or select
-    # GPU automatically. Callers may explicitly benchmark the bounded workers.
     remaining = iter(times)
     from itertools import chain
     if parallel is None:
@@ -1158,7 +1121,7 @@ def iter_export_frames(
     session = None
     pending = deque()
     try:
-        if parallel and options.renderer != "gpu":
+        if parallel:
             try:
                 pool = ProcessPoolExecutor(max_workers=2, mp_context=multiprocessing.get_context("spawn"),
                     initializer=_initialize_cpu_worker, initargs=(analysis, geom, options))

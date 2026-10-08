@@ -3893,7 +3893,6 @@ class MainWindow(QMainWindow):
             width=int(export.get('width', self.render_width_spin.value())),
             height=int(export.get('height', self.render_height_spin.value())),
             fps=int(export.get('fps', self.render_fps_spin.value())),
-            renderer=str(export.get('renderer', 'auto')) if export.get('renderer', 'auto') in {'auto', 'cpu', 'gpu'} else 'auto',
             export_engine=str(export.get('engine', EXPORT_ENGINE_AUTO_LABEL)),
             export_quality=str(export.get('quality', EXPORT_QUALITY_BALANCED_LABEL)),
             layout=layout,
@@ -4921,7 +4920,6 @@ class MainWindow(QMainWindow):
                 "width": int(self.render_width_spin.value()),
                 "height": int(self.render_height_spin.value()),
                 "fps": int(self.render_fps_spin.value()),
-                "renderer": getattr(self, "_export_renderer", "auto"),
                 "engine": self.export_engine_combo.currentText() if hasattr(self, "export_engine_combo") else EXPORT_ENGINE_AUTO_LABEL,
                 "quality": self.export_quality_combo.currentText() if hasattr(self, "export_quality_combo") else EXPORT_QUALITY_BALANCED_LABEL,
                 "layout": self.export_layout_spec.clone().clamp().to_dict(),
@@ -5100,9 +5098,6 @@ class MainWindow(QMainWindow):
             self.render_width_spin.setValue(int(export.get("width", self.render_width_spin.value())))
             self.render_height_spin.setValue(int(export.get("height", self.render_height_spin.value())))
             self.render_fps_spin.setValue(int(export.get("fps", self.render_fps_spin.value())))
-            self._export_renderer = export.get("renderer", "auto")
-            if self._export_renderer not in {"auto", "cpu", "gpu"}:
-                self._export_renderer = "auto"
             export_engine = str(export.get("engine", self.export_engine_combo.currentText() if hasattr(self, "export_engine_combo") else EXPORT_ENGINE_AUTO_LABEL))
             if hasattr(self, "export_engine_combo") and self.export_engine_combo.findText(export_engine) >= 0:
                 self.export_engine_combo.setCurrentText(export_engine)
@@ -6066,21 +6061,6 @@ class MainWindow(QMainWindow):
             self._preview_async_last_key = None
             self._preview_async_generation += 1
 
-    def _choose_export_renderer(self) -> bool:
-        # Keep the existing native save dialog and all other UI unchanged.
-        values = ("auto", "cpu", "gpu")
-        labels = ("Auto (identical CPU output)", "CPU (reference)", "Fast (GPU)")
-        current = getattr(self, "_export_renderer", "auto")
-        index = values.index(current) if current in values else 0
-        label, accepted = QInputDialog.getItem(
-            self, "Export renderer", "Renderer", labels, index, False,
-        )
-        if not accepted:
-            return False
-        self._export_renderer = values[labels.index(label)]
-        self._schedule_autosave()
-        return True
-
     def _build_export_options(
         self,
         output_path: str,
@@ -6095,7 +6075,6 @@ class MainWindow(QMainWindow):
         start_time, end_time = self._selected_export_range()
         return ExportOptions(
             output_path=output_path,
-            renderer=getattr(self, "_export_renderer", "auto"),
             width=int(width if width is not None else self.render_width_spin.value()),
             height=int(height if height is not None else self.render_height_spin.value()),
             fps=int(fps if fps is not None else self.render_fps_spin.value()),
@@ -6442,8 +6421,6 @@ class MainWindow(QMainWindow):
         start_dir = str(Path(self.file_path).with_suffix(".mp4")) if self.file_path else str(Path.home() / "metriq_visualizer_render.mp4")
         path, _ = QFileDialog.getSaveFileName(self, "Export MP4 render", start_dir, "MP4 video (*.mp4)")
         if not path:
-            return
-        if not self._choose_export_renderer():
             return
         options = self._build_export_options(path)
         analysis = self.analysis
@@ -6927,9 +6904,6 @@ def _fun_export_render_dialog(self) -> None:
         return
     if not path.lower().endswith(".mp4"):
         path += ".mp4"
-
-    if not self._choose_export_renderer():
-        return
 
     layout = preset.layout_factory()
     self.export_layout_spec = layout.clone().clamp()
