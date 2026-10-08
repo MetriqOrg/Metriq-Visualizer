@@ -1,6 +1,6 @@
 # Copyright (c) Metriq Foundation, Inc.
 # This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
-"""Optional disk cache for analysis results; callers explicitly opt in."""
+"""Disk cache for analysis results, enabled by the public media analyzer."""
 
 from __future__ import annotations
 
@@ -8,20 +8,20 @@ import hashlib
 import json
 import os
 import platform
+import shutil
 import tempfile
-import time
 from contextlib import suppress
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
 
-from metriq_visualizer_core import AnalysisResult, analysis_from_table_file, analyze_media, is_table_file
+from metriq_visualizer_core import AnalysisResult, _analyze_media_uncached, analysis_from_table_file, is_table_file
 
 CACHE_SCHEMA = "metriq.analysis-cache"
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 DEFAULT_MAX_BYTES = 2 * 1024 * 1024 * 1024
-ANALYSIS_ENGINE_VERSION = "1.10.18"
+ANALYSIS_ENGINE_VERSION = "1.10.18-compatible-dsp-v1"
 
 
 @dataclass(frozen=True)
@@ -90,9 +90,24 @@ def save_cached_analysis(result: AnalysisResult, fingerprint: SourceFingerprint 
     configured = (settings or AnalysisSettings()).normalized()
     output = _cache_path(source_fp, root, configured)
     output.parent.mkdir(parents=True, exist_ok=True)
+    audio_path = Path(result.audio_path)
+    # The renderer muxes this PCM stream. A temporary decoder path cannot be
+    # reused after restart, so persist it alongside the feature archive.
+    if result.source_kind == "media" and audio_path.resolve() != Path(source_fp.path):
+        cached_audio = output.with_suffix(".wav")
+        if audio_path.resolve() != cached_audio.resolve():
+            fd, name = tempfile.mkstemp(prefix=f".{output.stem}.", suffix=".tmp.wav", dir=output.parent)
+            os.close(fd)
+            temporary_audio = Path(name)
+            try:
+                shutil.copyfile(audio_path, temporary_audio)
+                temporary_audio.replace(cached_audio)
+            finally:
+                with suppress(OSError): temporary_audio.unlink(missing_ok=True)
+        audio_path = cached_audio.resolve()
     metadata = {"schema": CACHE_SCHEMA, "version": CACHE_VERSION, "engine": ANALYSIS_ENGINE_VERSION,
                 "fingerprint": asdict(source_fp), "settings": asdict(configured), "source_kind": result.source_kind,
-                "audio_path": str(result.audio_path), "sample_rate": result.sample_rate, "duration": result.duration,
+                "audio_path": str(audio_path), "sample_rate": result.sample_rate, "duration": result.duration,
                 "hop_length": result.hop_length, "n_fft": result.n_fft, "feature_names": list(result.features),
                 "feature_descriptions": result.feature_descriptions}
     arrays = {"__metadata__": np.asarray(json.dumps(metadata, separators=(",", ":"))), "times": result.times,
@@ -118,6 +133,7 @@ def load_cached_analysis(path: str | Path, fingerprint: SourceFingerprint | None
             meta = json.loads(str(data["__metadata__"].item()))
             if meta.get("schema") != CACHE_SCHEMA or meta.get("version") != CACHE_VERSION or meta.get("engine") != ANALYSIS_ENGINE_VERSION: return None
             if meta.get("fingerprint") != asdict(source_fp) or AnalysisSettings.from_mapping(meta.get("settings")).signature() != configured.signature(): return None
+            if meta.get("source_kind") == "media" and not Path(meta["audio_path"]).is_file(): return None
             names = meta["feature_names"]
             features = {name: np.asarray(data[f"feature_{i:04d}"], dtype=np.float64) for i, name in enumerate(names)}
             result = AnalysisResult(source_path=str(source), audio_path=str(meta["audio_path"]), sample_rate=int(meta["sample_rate"]), duration=float(meta["duration"]),
@@ -128,16 +144,20 @@ def load_cached_analysis(path: str | Path, fingerprint: SourceFingerprint | None
         return result
     except Exception:
         with suppress(OSError): cache_path.unlink(missing_ok=True)
+        with suppress(OSError): cache_path.with_suffix(".wav").unlink(missing_ok=True)
         return None
 
 
-def analyze_source_cached(path: str | Path, *, use_cache: bool = True, settings: AnalysisSettings | None = None, cache_root: Path | None = None) -> AnalysisResult:
+def analyze_source_cached(path: str | Path, *, use_cache: bool = True, settings: AnalysisSettings | None = None, cache_root: Path | None = None, temp_dir: str | Path | None = None) -> AnalysisResult:
     source = Path(path).expanduser().resolve(); configured = (settings or AnalysisSettings()).normalized()
     fingerprint = fingerprint_source(source)
     if use_cache:
-        cached = load_cached_analysis(source, fingerprint, root=cache_root, settings=configured)
+        try:
+            cached = load_cached_analysis(source, fingerprint, root=cache_root, settings=configured)
+        except OSError:
+            cached = None
         if cached is not None: return cached
-    result = analysis_from_table_file(source) if is_table_file(source) else analyze_media(source, configured.sample_rate, configured.n_fft, configured.hop_length)
+    result = analysis_from_table_file(source) if is_table_file(source) else _analyze_media_uncached(source, configured.sample_rate, configured.n_fft, configured.hop_length, temp_dir)
     if use_cache:
         try: save_cached_analysis(result, fingerprint, root=cache_root, settings=configured); prune_cache(root=cache_root)
         except Exception: pass
@@ -150,11 +170,18 @@ def prune_cache(*, root: Path | None = None, max_bytes: int = DEFAULT_MAX_BYTES)
     files = []
     for path in directory.glob("*.npz"):
         with suppress(OSError):
-            stat = path.stat(); files.append((stat.st_atime_ns, stat.st_size, path))
+            stat = path.stat()
+            size = stat.st_size
+            audio = path.with_suffix(".wav")
+            if audio.is_file(): size += audio.stat().st_size
+            files.append((stat.st_atime_ns, size, path))
     total = sum(size for _, size, _ in files); removed = 0
     for _, size, path in sorted(files):
         if total <= max(0, int(max_bytes)): break
-        try: path.unlink(); total -= size; removed += 1
+        try:
+            path.unlink()
+            with suppress(OSError): path.with_suffix(".wav").unlink(missing_ok=True)
+            total -= size; removed += 1
         except OSError: pass
     return removed
 
@@ -163,7 +190,10 @@ def clear_cache(*, root: Path | None = None) -> int:
     directory = root or cache_directory(); removed = 0
     if directory.exists():
         for path in directory.glob("*.npz"):
-            try: path.unlink(); removed += 1
+            try:
+                path.unlink()
+                with suppress(OSError): path.with_suffix(".wav").unlink(missing_ok=True)
+                removed += 1
             except OSError: pass
     return removed
 
