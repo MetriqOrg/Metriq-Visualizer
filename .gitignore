@@ -8,3 +8,8 @@ __pycache__/
 *.wav
 *.tmp
 .DS_Store
+
+# PyInstaller build output
+dist/
+build/Metriq Visualizer/
+*.spec
