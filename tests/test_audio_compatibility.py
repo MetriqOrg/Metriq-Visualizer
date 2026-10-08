@@ -16,7 +16,8 @@ GOLDENS = Path(__file__).parent / "goldens" / "audio_v1_10_18"
 # Float32 DSP is exact on the platform that generated the goldens (macOS arm64):
 # run with METRIQ_STRICT_GOLDENS=1 there. Other platforms differ in FFT/BLAS and
 # FFmpeg resampling; measured worst case on Linux with FFmpeg is 0.11% of a
-# feature's range, so elsewhere we allow 0.5% of the range (about 4x margin).
+# feature's range, so elsewhere we allow 0.5% of the range (about 4x margin). Features of a silent
+# input are numerical dust around zero (about 1e-4, e.g. MFCCs); 1e-3 absolute covers that.
 RTOL, ATOL = 1e-7, 1e-8
 CROSS_PLATFORM_RANGE_FRACTION = 0.005
 
@@ -34,7 +35,7 @@ def assert_matches(actual, expected, *, err_msg=""):
         np.testing.assert_allclose(actual, expected, rtol=RTOL, atol=ATOL, err_msg=err_msg)
         return
     spread = float(np.nanmax(expected) - np.nanmin(expected)) if expected.size else 0.0
-    np.testing.assert_allclose(actual, expected, rtol=0, atol=max(CROSS_PLATFORM_RANGE_FRACTION * spread, 1e-4), err_msg=err_msg)
+    np.testing.assert_allclose(actual, expected, rtol=0, atol=max(CROSS_PLATFORM_RANGE_FRACTION * spread, 1e-3), err_msg=err_msg)
 
 
 def decoded_22050(name):
