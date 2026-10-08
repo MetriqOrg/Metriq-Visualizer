@@ -2,8 +2,9 @@
 # This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
 """Verified updates from the public Metriq repository; no downloaded code executes.
 
-Metadata and asset requests use the repository's HTTPS API only. Redirects are
-refused. All staging is private, bounded and separate from the installed app.
+Metadata and initial asset requests use the repository's HTTPS API only. Asset
+redirects are bounded to approved HTTPS GitHub hosts without credentials.
+All staging is private, bounded and separate from the installed app.
 """
 from __future__ import annotations
 
@@ -21,6 +22,7 @@ import sys
 import tempfile
 import time
 import urllib.request
+from urllib.parse import urlsplit
 import unicodedata
 import zipfile
 from collections.abc import Callable, Iterable, Mapping
@@ -37,6 +39,11 @@ MAX_EXPANDED_BYTES = 4 * 1024 * 1024 * 1024
 MAX_FILES = 30000
 MAX_METADATA_BYTES = 2 * 1024 * 1024
 MAX_COMPRESSION_RATIO = 200
+DOWNLOAD_REDIRECT_HOSTS = frozenset({
+    "github.com", "api.github.com", "objects.githubusercontent.com",
+    "release-assets.githubusercontent.com", "github-releases.githubusercontent.com",
+})
+MAX_DOWNLOAD_REDIRECTS = 3
 CHECK_INTERVAL = 24 * 60 * 60
 _VERSION_RE = re.compile(r"^v?(\d{1,9})(?:\.(\d{1,9}))?(?:\.(\d{1,9}))?$")
 _ASSET_RE = re.compile(r"Metriq-Visualizer-(?:v?\d+(?:\.\d+){0,2}-)?macOS-(arm64|x86_64|universal)(?:\.app)?\.zip", re.I)
@@ -126,9 +133,29 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         raise ValueError("GitHub redirected this request; strict API-only update policy refused it.")
 
 
+class _GitHubDownloadRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urlsplit(newurl)
+        if (target.scheme != "https" or target.hostname not in DOWNLOAD_REDIRECT_HOSTS or
+                target.port not in {None, 443} or target.username is not None or target.password is not None):
+            raise ValueError("Unsafe GitHub download redirect target.")
+        hops = getattr(req, "_download_redirect_hops", 0) + 1
+        if hops > MAX_DOWNLOAD_REDIRECTS:
+            raise ValueError("GitHub download exceeds the three-redirect limit.")
+        # Let urllib enforce redirect method/status semantics, but carry only our
+        # fixed public download headers, never incoming auth, cookies or secrets.
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        redirected.headers = _request(newurl, "application/octet-stream").headers
+        redirected.unredirected_hdrs.clear()
+        redirected._download_redirect_hops = hops
+        return redirected
+
+
 def _urlopen(request, *, timeout):
-    # Ignore ambient proxies and credentials; never leave the approved API host.
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
+    # Metadata stays API-only. Only repository asset requests may follow the
+    # approved storage redirects. Ignore ambient proxies and credentials.
+    redirects = _GitHubDownloadRedirect() if _asset_url_allowed(request.full_url) else _NoRedirect()
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), redirects)
     return opener.open(request, timeout=timeout)
 
 
